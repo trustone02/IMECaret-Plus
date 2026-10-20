@@ -233,6 +233,7 @@ struct ForegroundWindowProfile {
     emeditor: bool,
     // 아래한글(hwp.exe)은 자체 입력 엔진을 사용해 표준 IME 상태 조회가 불가능하고
     // 한영 상태도 일치하지 않으므로, 헷갈리지 않도록 배지를 아예 띄우지 않는다.
+    #[allow(dead_code)]
     hwp: bool,
 }
 
@@ -684,12 +685,6 @@ impl EditabilityDetector {
         }
 
         let foreground_profile = self.foreground_window_profile(targets.foreground);
-        // 아래한글(hwp.exe)은 자체 입력 엔진을 사용하여 표준 IME 상태 조회가 불가능하고
-        // 헷갈림을 방지하기 위해 배지를 아예 표시하지 않는다.
-        if foreground_profile.hwp {
-            return None;
-        }
-
         let console_like = foreground_profile.console_like;
         let classic_console = foreground_profile.classic_console;
         let uia_preferred = foreground_profile.uia_preferred;
