@@ -5,3 +5,8 @@
 *.exp
 *.lib
 .DS_Store
+
+# 내부 업무 감사 및 개발 백서 (대외 비공개)
+개발백서.md
+task_log.md
+
