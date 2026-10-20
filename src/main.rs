@@ -560,11 +560,7 @@ mod windows_app {
                     || self.task_manager_ime_process_id != input_context.process_id
                 {
                     self.task_manager_ime_process_id = input_context.process_id;
-                    self.task_manager_korean_open = match self.old_kind {
-                        Some(ImeKind::Korean) => Some(true),
-                        Some(ImeKind::English) => Some(false),
-                        _ => None,
-                    };
+                    self.task_manager_korean_open = None;
                 }
             }
             self.set_special_ime_active(task_manager_search, is_hwp);
@@ -786,7 +782,7 @@ mod windows_app {
 
             if active {
                 self.editability_detector.reset_taskbar_input_retry();
-                if self.refresh_task_manager_ime_from_system_indicator() || hwp_newly_focused {
+                if self.refresh_task_manager_ime_from_system_indicator() {
                     if let Some(open) = self.task_manager_korean_open {
                         if hwp_active {
                             crate::hwp::force_set_hwp_hangul_state(open);
@@ -825,10 +821,6 @@ mod windows_app {
                 }
                 self.last_activity = Instant::now();
                 self.refresh_ime_state_only();
-            } else if self.active_hwp {
-                if let Some(open) = self.task_manager_korean_open {
-                    crate::hwp::set_hwp_hangul_state_from_system(open);
-                }
             }
         }
 
@@ -2145,10 +2137,15 @@ mod windows_app {
                 // message to DefWindowProc lets Windows release its data.
                 match raw_keyboard_activity(lparam) {
                     RawKeyboardActivity::KeyDown(signal) => {
-                        if signal.virtual_key == 0x15 || signal.virtual_key == 0xa5 {
+                        let is_hangul_key = signal.virtual_key == 0x15
+                            || signal.virtual_key == 0xa5
+                            || (signal.virtual_key == 0x12 && (signal.flags & RI_KEY_E0 != 0))
+                            || (signal.make_code == 0x38 && (signal.flags & RI_KEY_E0 != 0));
+                        if is_hangul_key {
                             let fg = GetForegroundWindow();
                             if crate::hwp::is_hwp_window(fg) {
                                 crate::hwp::toggle_hwp_hangul_state();
+                                state.refresh_ime_state_only();
                             }
                         }
                         state.on_keyboard_activity(Some(signal));

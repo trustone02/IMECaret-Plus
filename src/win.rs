@@ -449,6 +449,8 @@ pub const RIDEV_INPUTSINK: DWORD = 0x0000_0100;
 pub const RID_INPUT: UINT = 0x1000_0003;
 pub const RIM_TYPEKEYBOARD: DWORD = 1;
 pub const RI_KEY_BREAK: WORD = 0x0001;
+pub const RI_KEY_E0: WORD = 0x0002;
+pub const RI_KEY_E1: WORD = 0x0004;
 
 // Window styles.
 pub const WS_OVERLAPPED: DWORD = 0x0000_0000;
