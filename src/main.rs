@@ -1033,13 +1033,39 @@ mod windows_app {
             let badge_width = scale_for_dpi(CARET_INDICATOR_WIDTH, dpi);
             let badge_height = scale_for_dpi(CARET_INDICATOR_HEIGHT, dpi);
 
-            let (x, y) = caret_indicator_position_avoiding_rect(
+            let is_shell_or_taskbar = self.shell_overlay_active
+                || is_taskbar_or_shell_window(GetForegroundWindow())
+                || is_taskbar_anchor(anchor);
+
+            // 작업표시줄 검색창이나 모던 셸 내부에서는 사용자의 기본 설정(Below/Above)이
+            // 화면 하단 경계나 상단 시스템 툴팁/플라이아웃에 부딪혀 배지를 창 뒤로 숨게 만듭니다.
+            // 따라서 셸/작업표시줄 입력 시에는 강제로 IndicatorPosition::Right를 적용하여
+            // 검색창 입력박스 내부(커서 바로 우측)에 안전하게 안착시킵니다.
+            let effective_position = if is_shell_or_taskbar {
+                IndicatorPosition::Right
+            } else {
+                self.config.indicator_position
+            };
+
+            let (x, mut y) = caret_indicator_position_avoiding_rect(
                 anchor,
                 badge_width,
                 badge_height,
-                self.config.indicator_position,
+                effective_position,
                 shell_overlay,
             );
+
+            // 작업표시줄 영역 내에 위치할 경우 배지가 작업표시줄 상단 밖(위쪽)으로
+            // 튕겨 올라가 "검색" 말풍선 툴팁 뒤로 숨지 못하도록 수직 좌표를 작업표시줄 내부로 강제 고정합니다.
+            if is_shell_or_taskbar {
+                if let Some(tb_rect) = taskbar_window_rect_for_anchor(anchor) {
+                    let min_y = tb_rect.top.saturating_add(2);
+                    let max_y = tb_rect.bottom.saturating_sub(badge_height).saturating_sub(2);
+                    if min_y <= max_y {
+                        y = y.clamp(min_y, max_y);
+                    }
+                }
+            }
             let size_changed = self.badge_size != Some((badge_width, badge_height));
             if size_changed {
                 self.badge_surface_valid = false;
@@ -1088,6 +1114,7 @@ mod windows_app {
             // until typing or moving the dialog changes its position.
             if self.active_caret_reassert_topmost
                 || self.shell_overlay_active
+                || is_shell_or_taskbar
                 || is_excel_find_replace_foreground()
             {
                 SetWindowPos(
@@ -1125,15 +1152,9 @@ mod windows_app {
         }
 
         unsafe fn active_shell_overlay_bounds(&mut self, foreground: HWND) -> Option<RECT> {
-            if window_class_equals(foreground, "Shell_TrayWnd")
-                || window_class_equals(foreground, "Shell_SecondaryTrayWnd")
-            {
-                return None;
-            }
             if foreground != self.shell_overlay_hwnd {
                 self.shell_overlay_hwnd = foreground;
-                self.shell_overlay_active =
-                    !foreground.is_null() && is_modern_shell_overlay_window(foreground);
+                self.shell_overlay_active = is_taskbar_or_shell_window(foreground);
                 self.shell_focused_host = FocusedInputHost::default();
                 self.shell_focused_host_tick = None;
                 WIN_EVENT_ALLOWED_HOST_PROCESS_ID.store(0, Ordering::Release);
@@ -2443,6 +2464,15 @@ mod windows_app {
 
         if updated {
             ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                x,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
         }
         updated
     }
@@ -3268,6 +3298,63 @@ mod windows_app {
         }
     }
 
+    unsafe fn taskbar_window_rect_for_anchor(anchor: CaretAnchor) -> Option<RECT> {
+        for class in ["Shell_TrayWnd", "Shell_SecondaryTrayWnd"] {
+            let hwnd = FindWindowW(wide(class).as_ptr(), null());
+            if !hwnd.is_null() {
+                let mut rect = RECT::default();
+                if GetWindowRect(hwnd, &mut rect) != FALSE && rect_is_valid(rect) {
+                    if anchor.bottom >= rect.top
+                        && anchor.top <= rect.bottom
+                        && anchor.x >= rect.left
+                        && anchor.x <= rect.right
+                    {
+                        return Some(rect);
+                    }
+                }
+            }
+        }
+        let hwnd = FindWindowW(wide("Shell_TrayWnd").as_ptr(), null());
+        if !hwnd.is_null() {
+            let mut rect = RECT::default();
+            if GetWindowRect(hwnd, &mut rect) != FALSE && rect_is_valid(rect) {
+                return Some(rect);
+            }
+        }
+        None
+    }
+
+    unsafe fn is_taskbar_or_shell_window(window: HWND) -> bool {
+        if window.is_null() {
+            return false;
+        }
+        if window_class_equals(window, "Shell_TrayWnd")
+            || window_class_equals(window, "Shell_SecondaryTrayWnd")
+        {
+            return true;
+        }
+        is_modern_shell_overlay_window(window)
+    }
+
+    unsafe fn is_taskbar_anchor(anchor: CaretAnchor) -> bool {
+        for class in ["Shell_TrayWnd", "Shell_SecondaryTrayWnd"] {
+            let hwnd = FindWindowW(wide(class).as_ptr(), null());
+            if !hwnd.is_null() {
+                let mut rect = RECT::default();
+                if GetWindowRect(hwnd, &mut rect) != FALSE && rect_is_valid(rect) {
+                    if anchor.bottom >= rect.top
+                        && anchor.top <= rect.bottom
+                        && anchor.x >= rect.left
+                        && anchor.x <= rect.right
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     fn rect_is_valid(rect: RECT) -> bool {
         rect.right > rect.left && rect.bottom > rect.top
     }
@@ -3601,6 +3688,55 @@ mod windows_app {
                 ),
                 (745, 377)
             );
+        }
+
+        #[test]
+        fn taskbar_searchbox_indicator_stays_inside_taskbar_bounds() {
+            // 작업표시줄이 화면 하단 1040~1080에 위치하고, 검색창 커서가 1045~1065에 있는 상황
+            let anchor = CaretAnchor {
+                x: 130,
+                top: 1045,
+                bottom: 1065,
+            };
+            let bounds = RECT {
+                left: 0,
+                top: 0,
+                right: 1920,
+                bottom: 1080,
+            };
+            let tb_rect = RECT {
+                left: 0,
+                top: 1040,
+                right: 1920,
+                bottom: 1080,
+            };
+
+            // 만약 Below를 그대로 쓰면 1080을 넘어 위(1028)로 튕겨서 작업표시줄 상단(1040) 밖으로 나가버림
+            let (_below_x, below_y) = caret_indicator_position_in_bounds(
+                anchor,
+                CARET_INDICATOR_WIDTH,
+                CARET_INDICATOR_HEIGHT,
+                bounds,
+                IndicatorPosition::Below,
+            );
+            assert!(below_y < tb_rect.top, "Below 모드는 작업표시줄 밖 위쪽(말풍선 툴팁 영역)으로 튕겨나감");
+
+            // 반면 Right 모드는 anchor.bottom(1065) - height(15) = 1050이 되어 작업표시줄 내부(1040~1080)에 머묾
+            let (right_x, mut right_y) = caret_indicator_position_in_bounds(
+                anchor,
+                CARET_INDICATOR_WIDTH,
+                CARET_INDICATOR_HEIGHT,
+                bounds,
+                IndicatorPosition::Right,
+            );
+            assert_eq!(right_x, 134);
+            assert_eq!(right_y, 1050);
+
+            // 작업표시줄 클램프 적용 시에도 안전하게 작업표시줄 내부 유지
+            let min_y = tb_rect.top.saturating_add(2);
+            let max_y = tb_rect.bottom.saturating_sub(CARET_INDICATOR_HEIGHT).saturating_sub(2);
+            right_y = right_y.clamp(min_y, max_y);
+            assert!(right_y >= tb_rect.top && right_y + CARET_INDICATOR_HEIGHT <= tb_rect.bottom);
         }
 
         #[test]
