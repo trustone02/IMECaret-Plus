@@ -12,3 +12,6 @@
 *개발백서*
 task_log.md
 task_log*.md
+
+# 설치 파일 산출물은 저장소에 커밋하지 않고 GitHub Releases로만 배포
+installer/Output/
