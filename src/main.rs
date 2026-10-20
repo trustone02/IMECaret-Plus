@@ -44,7 +44,7 @@ mod windows_app {
     use std::time::{Duration, Instant};
 
     const APP_NAME: &str = "IMECaret Plus";
-    const APP_VERSION: &str = "2.5.1";
+    const APP_VERSION: &str = "1.0";
     const MAIN_CLASS: &str = "IMECaretPlus.MainWindow";
     const BADGE_CLASS: &str = "IMECaretPlus.BadgeWindow";
     const SETTINGS_CLASS: &str = "IMECaretPlus.SettingsWindow";
@@ -3839,7 +3839,7 @@ mod windows_app {
 
         #[test]
         fn tray_tooltip_contains_program_name_and_version() {
-            assert_eq!(tray_tooltip_text(), "IMECaret Plus 2.5.1");
+            assert_eq!(tray_tooltip_text(), "IMECaret Plus 1.0");
         }
 
         #[test]

@@ -1,4 +1,4 @@
-# IMECaret Plus (아이엠이캐럿 플러스) v2.5.1
+# IMECaret Plus (아이엠이캐럿 플러스) v1.0
 
 > **Based on [mattisonit/ime-caret](https://github.com/mattisonit/ime-caret)**  
 > **한국어 실무 환경(아래한글, SSMS 전자/반자, 오피스, Windows 11)을 위한 지능형 텍스트 캐럿 IME 상태 표시기**
