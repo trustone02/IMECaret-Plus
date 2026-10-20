@@ -59,7 +59,7 @@ Windows 환경에서 현재 활성화된 텍스트 커서(Caret) 바로 옆에 �
 
 ## 📦 설치 및 실행
 
-1. **설치 파일 다운로드:** [Releases](https://github.com/trustone02/IME-Caret/releases)에서 최신 `IMECaretPlus-Setup.exe`를 다운로드하여 실행합니다.
+1. **설치 파일 다운로드:** [Releases](https://github.com/trustone02/IMECaret-Plus/releases)에서 최신 `IMECaretPlus-Setup.exe`를 다운로드하여 실행합니다.
 2. 설치 마법사에서 **"Windows 시작 시 자동으로 실행"**을 체크하면 PC 부팅 시 자동으로 백그라운드 상주 실행됩니다.
 3. 무설치 독립 실행 바이너리를 원하실 경우 `dist\IMECaretPlus.exe`를 바로 실행하셔도 됩니다.
 
@@ -75,8 +75,8 @@ Windows 환경에서 현재 활성화된 텍스트 커서(Caret) 바로 옆에 �
 
 ```powershell
 # 프로젝트 클론 (메인 본진 저장소)
-git clone https://github.com/trustone02/IME-Caret.git
-cd IME-Caret
+git clone https://github.com/trustone02/IMECaret-Plus.git
+cd IMECaret-Plus
 
 # 단위 테스트 실행
 cargo test
