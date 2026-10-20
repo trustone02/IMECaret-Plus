@@ -34,12 +34,18 @@ const UIA_LEGACY_IACCESSIBLE_STATE_PROPERTY_ID: i32 = 30096;
 const UIA_ARIA_ROLE_PROPERTY_ID: i32 = 30101;
 const UIA_IS_TEXT_EDIT_PATTERN_AVAILABLE_PROPERTY_ID: i32 = 30149;
 const UIA_NATIVE_WINDOW_HANDLE_PROPERTY_ID: i32 = 30020;
+// Excel exposes the currently selected cell (even outside in-cell edit mode)
+// as a DataItem element with SelectionItemPattern.IsSelected == true. This is
+// what lets the badge anchor to a cell the user merely selected, before they
+// double-click/F2 into the EXCEL6/EXCEL< editor windows handled elsewhere.
+const UIA_SELECTION_ITEM_IS_SELECTED_PROPERTY_ID: i32 = 30079;
 
 const UIA_COMBO_BOX_CONTROL_TYPE_ID: i32 = 50003;
 const UIA_EDIT_CONTROL_TYPE_ID: i32 = 50004;
 const UIA_TEXT_CONTROL_TYPE_ID: i32 = 50020;
 const UIA_GROUP_CONTROL_TYPE_ID: i32 = 50026;
 const UIA_DOCUMENT_CONTROL_TYPE_ID: i32 = 50030;
+const UIA_DATA_ITEM_CONTROL_TYPE_ID: i32 = 50029;
 
 const STATE_SYSTEM_UNAVAILABLE: i32 = 0x0000_0001;
 const STATE_SYSTEM_READONLY: i32 = 0x0000_0040;
@@ -220,6 +226,14 @@ struct ForegroundWindowProfile {
     office_uia_preferred: bool,
     word_frame: bool,
     transient_top_input_host: bool,
+    // EmEditor는 텍스트 뷰를 자체적으로 그려서(EEView 클래스) 윈도우 클래스나
+    // UI Automation만으로는 편집 가능 여부를 알 수 없다. GitHub 이슈 #1에서
+    // DH7KIM 님이 제보/패치해 주신 방식을 반영했다.
+    // https://github.com/mattisonit/IME-Caret/issues/1
+    emeditor: bool,
+    // 아래한글(hwp.exe)은 자체 입력 엔진을 사용해 표준 IME 상태 조회가 불가능하고
+    // 한영 상태도 일치하지 않으므로, 헷갈리지 않도록 배지를 아예 띄우지 않는다.
+    hwp: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -397,6 +411,8 @@ impl EditabilityDetector {
             office_uia_preferred: is_office_uia_preferred_caret_class(&class_name),
             word_frame: class_name.eq_ignore_ascii_case("OpusApp"),
             transient_top_input_host: is_transient_top_input_host_class(&class_name),
+            emeditor: is_emeditor_process_window(window),
+            hwp: is_hwp_process_window(window),
         };
         self.foreground_window_profile = Some(profile);
         profile
@@ -469,6 +485,27 @@ impl EditabilityDetector {
             cached.dialog = dialog;
         }
         dialog
+    }
+
+    /// Anchors the badge to the currently selected cell while Excel has focus
+    /// but no EXCEL6/EXCEL</EDTBX editor window exists yet (the user has only
+    /// selected a cell, not double-clicked/F2'd/typed into it). Without this,
+    /// the indicator stayed hidden until the user was already mid-edit.
+    ///
+    /// Deliberately NOT cached in `refresh_probe_cache`: arrow-key cell
+    /// navigation never changes the foreground/focus/caret HWNDs that cache
+    /// is keyed on (Excel's grid is one window), so a cached entry would keep
+    /// anchoring to whichever cell was selected first and never follow the
+    /// selection across the rest of the session.
+    unsafe fn excel_selected_cell_anchor_for_refresh(
+        &mut self,
+        context: FocusedInputContext,
+    ) -> Option<CaretAnchor> {
+        if is_excel_host_window(context.foreground) && !self.automation.is_null() {
+            excel_selected_cell_anchor(self.automation, self.raw_view_walker, context.foreground)
+        } else {
+            None
+        }
     }
 
     unsafe fn excel_dialog_caret_anchor_for_refresh(
@@ -647,6 +684,12 @@ impl EditabilityDetector {
         }
 
         let foreground_profile = self.foreground_window_profile(targets.foreground);
+        // 아래한글(hwp.exe)은 자체 입력 엔진을 사용하여 표준 IME 상태 조회가 불가능하고
+        // 헷갈림을 방지하기 위해 배지를 아예 표시하지 않는다.
+        if foreground_profile.hwp {
+            return None;
+        }
+
         let console_like = foreground_profile.console_like;
         let classic_console = foreground_profile.classic_console;
         let uia_preferred = foreground_profile.uia_preferred;
@@ -654,6 +697,28 @@ impl EditabilityDetector {
         let force_exact_uia_geometry = uia_preferred && foreground_profile.chromium;
         if !classic_console {
             self.detach_console();
+        }
+
+        // EmEditor: try its Active Accessibility caret first, then its
+        // GUI-thread caret (only when it actually lands inside the EmEditor
+        // window - some builds report a Win32 system caret that is live but
+        // not anchored to the visible text cursor at all), and finally a UI
+        // Automation text range.
+        if foreground_profile.emeditor {
+            for window in [targets.focus, targets.caret, targets.active] {
+                if let Some(anchor) = accessible_system_caret_anchor(window) {
+                    return Some(anchor);
+                }
+            }
+            if let Some(anchor) = win32_caret_anchor(targets)
+                .filter(|anchor| anchor_matches_window(*anchor, targets.foreground))
+            {
+                return Some(anchor);
+            }
+            return match self.uia_focused_caret_anchor(targets, false, false, false) {
+                CaretProbeResult::Found(anchor) => Some(anchor),
+                CaretProbeResult::Suppress | CaretProbeResult::Missing => None,
+            };
         }
 
         // Classic cmd.exe reports the screen-buffer cursor at the first cell
@@ -743,6 +808,13 @@ impl EditabilityDetector {
             return self
                 .excel_dialog_root_for_refresh(targets)
                 .and_then(|_| excel_dialog_editor_bounds_anchor(window));
+        }
+        // No EXCEL6/EXCEL</EDTBX editor window yet: the user has only
+        // selected a cell (click, arrow keys) without starting to type.
+        // Anchor to that selected cell so the indicator is visible before
+        // the first keystroke, not only once editing has already begun.
+        if let Some(anchor) = self.excel_selected_cell_anchor_for_refresh(targets) {
+            return Some(anchor);
         }
         if let Some(anchor) = self.excel_dialog_focused_element_anchor(targets) {
             return Some(anchor);
@@ -956,6 +1028,9 @@ impl EditabilityDetector {
             || self
                 .excel_dialog_caret_anchor_for_refresh(targets)
                 .is_some()
+            || self
+                .excel_selected_cell_anchor_for_refresh(targets)
+                .is_some()
         {
             let result = Editability::Editable;
             self.last_focus_probe = Some(CachedFocusProbe {
@@ -979,6 +1054,27 @@ impl EditabilityDetector {
             // Recognize it directly instead of waiting for Word's UIA tree to
             // publish its editable state. Outlook is excluded by its distinct
             // foreground frame and continues through the guarded mail path.
+            let result = Editability::Editable;
+            self.last_focus_probe = Some(CachedFocusProbe {
+                foreground: targets.foreground,
+                focus: targets.focus,
+                caret: targets.caret,
+                result,
+                tick: now,
+            });
+            return result;
+        }
+
+        // EmEditor paints its text view itself, so neither the window class nor
+        // UI Automation identifies it as editable. Identify it by process and
+        // accept a live text caret (Win32 or Active Accessibility) as proof
+        // that an editing view owns the keyboard focus.
+        if foreground_profile.emeditor
+            && (!targets.caret.is_null()
+                || [targets.focus, targets.active]
+                    .into_iter()
+                    .any(|window| accessible_system_caret_anchor(window).is_some()))
+        {
             let result = Editability::Editable;
             self.last_focus_probe = Some(CachedFocusProbe {
                 foreground: targets.foreground,
@@ -2150,6 +2246,110 @@ fn is_office_uia_preferred_caret_class(class_name: &str) -> bool {
     class_name.eq_ignore_ascii_case("PPTFrameClass")
 }
 
+unsafe fn is_emeditor_process_window(window: HWND) -> bool {
+    let mut process_id = 0u32;
+    if GetWindowThreadProcessId(window, &mut process_id) == 0 {
+        return false;
+    }
+    crate::ime::process_executable_name(process_id).as_deref() == Some("emeditor.exe")
+}
+
+unsafe fn is_hwp_process_window(window: HWND) -> bool {
+    if window.is_null() {
+        return false;
+    }
+    let mut process_id = 0u32;
+    if GetWindowThreadProcessId(window, &mut process_id) != 0 {
+        if let Some(name) = crate::ime::process_executable_name(process_id) {
+            if name.eq_ignore_ascii_case("hwp.exe") || name.contains("hwp") {
+                return true;
+            }
+        }
+    }
+    // 창 제목(예: "빈 문서 1 - 한글")에 한글/HWP가 포함되어 있어도 아래한글로 판정
+    let mut title_buf = [0u16; 256];
+    let len = GetWindowTextW(window, title_buf.as_mut_ptr(), title_buf.len() as i32);
+    if len > 0 {
+        let title = String::from_utf16_lossy(&title_buf[..len as usize]).to_lowercase();
+        if title.contains("한글") || title.contains("hwp") {
+            return true;
+        }
+    }
+    false
+}
+
+const MAX_EXCEL_SELECTED_CELL_DEPTH: usize = 24;
+const MAX_EXCEL_SELECTED_CELL_NODES: usize = 4000;
+
+/// Bounded depth-first search for a DataItem element (a worksheet cell) whose
+/// SelectionItemPattern reports IsSelected == true. Scoped to the Excel host
+/// window so it never wanders into other application windows.
+unsafe fn excel_selected_cell_anchor(
+    automation: *mut c_void,
+    raw_view_walker: *mut c_void,
+    window: HWND,
+) -> Option<CaretAnchor> {
+    if raw_view_walker.is_null() {
+        return None;
+    }
+    let root = element_from_handle(automation, window)?;
+    let mut remaining = MAX_EXCEL_SELECTED_CELL_NODES;
+    let result = find_selected_cell(raw_view_walker, root, MAX_EXCEL_SELECTED_CELL_DEPTH, &mut remaining);
+    release_com(root);
+    let cell = result?;
+    let rect = property_bounding_rect(cell);
+    release_com(cell);
+    // A whole cell is far wider than a text caret; anchor near its left edge
+    // (where typing would begin) rather than treating it like a thin caret.
+    rect.and_then(editable_element_caret_anchor)
+}
+
+fn is_selected_data_item(element: *mut c_void) -> bool {
+    unsafe {
+        property_i32(element, UIA_CONTROL_TYPE_PROPERTY_ID) == Some(UIA_DATA_ITEM_CONTROL_TYPE_ID)
+            && property_bool(element, UIA_SELECTION_ITEM_IS_SELECTED_PROPERTY_ID) == Some(true)
+    }
+}
+
+unsafe fn find_selected_cell(
+    walker: *mut c_void,
+    parent: *mut c_void,
+    depth: usize,
+    remaining: &mut usize,
+) -> Option<*mut c_void> {
+    if depth == 0 || *remaining == 0 {
+        return None;
+    }
+    let Some(mut child) = tree_walker_first_child(walker, parent) else {
+        return None;
+    };
+    loop {
+        *remaining = (*remaining).saturating_sub(1);
+        if is_selected_data_item(child) {
+            return Some(child);
+        }
+
+        if *remaining > 0 {
+            if let Some(found) = find_selected_cell(walker, child, depth - 1, remaining) {
+                release_com(child);
+                return Some(found);
+            }
+        }
+
+        let next = tree_walker_next_sibling(walker, child);
+        release_com(child);
+        let Some(next) = next else {
+            break;
+        };
+        child = next;
+        if *remaining == 0 {
+            release_com(child);
+            break;
+        }
+    }
+    None
+}
+
 unsafe fn excel_editor_window(targets: ForegroundFocusTargets) -> Option<HWND> {
     if !is_excel_host_window(targets.foreground) {
         return None;
@@ -2448,6 +2648,13 @@ unsafe fn classify_standard_window(window: HWND) -> Option<Editability> {
 
     if normalized == "static" {
         return Some(Editability::ReadOnly);
+    }
+
+    // EmEditor draws its text view itself (class "EEView") instead of using
+    // Edit/RichEdit/Scintilla, and its UI Automation tree carries no editable
+    // evidence, so without this the indicator was never shown there.
+    if normalized.starts_with("eeview") {
+        return Some(Editability::Editable);
     }
 
     None

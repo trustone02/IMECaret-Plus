@@ -770,7 +770,7 @@ pub fn is_modern_shell_overlay_window(window: HWND) -> bool {
     }
 }
 
-unsafe fn process_executable_name(process_id: u32) -> Option<String> {
+pub(crate) unsafe fn process_executable_name(process_id: u32) -> Option<String> {
     if process_id == 0 {
         return None;
     }

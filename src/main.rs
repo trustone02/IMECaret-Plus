@@ -100,7 +100,9 @@ mod windows_app {
     static WIN_EVENT_ALLOWED_HOST_PROCESS_ID: AtomicU32 = AtomicU32::new(0);
 
     const SETTINGS_CLIENT_WIDTH: i32 = 414;
-    const SETTINGS_CLIENT_HEIGHT: i32 = 402;
+    // 전자(全角) 경고 배경색 설정 행 한 줄(29px)을 더 수용하기 위해 기존보다
+    // 높였다(402 -> 431).
+    const SETTINGS_CLIENT_HEIGHT: i32 = 431;
     const SETTINGS_WINDOW_STYLE: DWORD = WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN;
     const SETTINGS_WINDOW_EX_STYLE: DWORD = WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT;
     const SETTINGS_HORIZONTAL_MARGIN: i32 = 18;
@@ -131,6 +133,7 @@ mod windows_app {
     const CTRL_ENGLISH_BACKGROUND_COLOR: u16 = 2107;
     const CTRL_JAPANESE_BACKGROUND_COLOR: u16 = 2108;
     const CTRL_KOREAN_BACKGROUND_COLOR: u16 = 2109;
+    const CTRL_FULLSHAPE_WARNING_COLOR: u16 = 2110;
     const CTRL_OK: u16 = IDOK;
     const CTRL_CANCEL: u16 = IDCANCEL;
 
@@ -222,6 +225,10 @@ mod windows_app {
         tray_added: bool,
         old_kind: Option<ImeKind>,
         old_caps: bool,
+        // 전자(全角) 여부. kind/caps 와 별도 비트라서 같이 들고 다니다가
+        // refresh_caret_position_only 처럼 IME 상태를 다시 조회하지 않는
+        // 경로에서도 경고색을 유지하는 데 쓴다.
+        old_fullshape: bool,
         invalid_since: Option<Instant>,
         cleared_unknown: bool,
 
@@ -292,6 +299,7 @@ mod windows_app {
                 tray_added: false,
                 old_kind: None,
                 old_caps: false,
+                old_fullshape: false,
                 invalid_since: None,
                 cleared_unknown: false,
                 badge_visible: false,
@@ -724,6 +732,7 @@ mod windows_app {
             self.update_active_caret_indicator(
                 kind,
                 self.old_caps,
+                self.old_fullshape,
                 anchor,
                 self.active_shell_overlay,
             );
@@ -907,6 +916,10 @@ mod windows_app {
 
             let kind = classify_ime(snapshot);
             let caps = (GetKeyState(VK_CAPITAL) & 1) != 0;
+            // 한글/영문 모드와는 독립적인 비트라서 kind 와 별도로 들고 다닌다.
+            // SSMS처럼 전자 모드인 줄 모르고 타이핑하다 쿼리가 깨지는 걸
+            // 막기 위한 경고 표시용이다.
+            let fullshape = snapshot.conversion_mode & IME_CMODE_FULLSHAPE != 0;
             let state_changed = self.old_kind != Some(kind) || self.old_caps != caps;
 
             if state_changed {
@@ -917,8 +930,9 @@ mod windows_app {
                 self.old_kind = Some(kind);
                 self.old_caps = caps;
             }
+            self.old_fullshape = fullshape;
 
-            self.update_active_caret_indicator(kind, caps, anchor, shell_overlay);
+            self.update_active_caret_indicator(kind, caps, fullshape, anchor, shell_overlay);
         }
 
         unsafe fn play_kind_sound(&self, kind: ImeKind) {
@@ -952,6 +966,7 @@ mod windows_app {
             &mut self,
             kind: ImeKind,
             caps: bool,
+            fullshape: bool,
             anchor: CaretAnchor,
             shell_overlay: Option<RECT>,
         ) {
@@ -960,7 +975,7 @@ mod windows_app {
                 return;
             }
 
-            let (text, background_color) = match kind {
+            let (text, mut background_color) = match kind {
                 ImeKind::Korean => ('가' as u16, self.config.korean_background_color),
                 ImeKind::JapaneseHiragana => {
                     ('ひ' as u16, self.config.japanese_background_color)
@@ -975,6 +990,12 @@ mod windows_app {
                     return;
                 }
             };
+            // 전자(全角) 모드는 글자(가/a/A) 자체는 그대로 두고 배경색만 경고색으로
+            // 덮어써서, SSMS 등에서 타이핑하기 전에 전자 모드인 걸 바로 알아챌 수
+            // 있게 한다.
+            if fullshape {
+                background_color = self.config.fullshape_warning_color;
+            }
             let text_color = self.config.indicator_text_color;
 
             let appearance_changed = self.badge_kind != Some(kind)
@@ -1452,8 +1473,9 @@ mod windows_app {
                 (CTRL_ENGLISH_BACKGROUND_COLOR, "영문 배경색"),
                 (CTRL_JAPANESE_BACKGROUND_COLOR, "일본어 배경색"),
                 (CTRL_KOREAN_BACKGROUND_COLOR, "한글 배경색"),
+                (CTRL_FULLSHAPE_WARNING_COLOR, "전자(全角) 경고 배경색"),
             ];
-            let mut colors = [self.config.indicator_text_color; 4];
+            let mut colors = [self.config.indicator_text_color; 5];
             for ((control_id, label), color) in color_fields.into_iter().zip(&mut colors) {
                 let Some(value) = read_control_text(hwnd, control_id) else {
                     show_invalid_color_message(hwnd, label);
@@ -1477,6 +1499,7 @@ mod windows_app {
             self.config.english_background_color = colors[1];
             self.config.japanese_background_color = colors[2];
             self.config.korean_background_color = colors[3];
+            self.config.fullshape_warning_color = colors[4];
             self.save_config();
 
             self.old_kind = None;
@@ -2463,7 +2486,8 @@ mod windows_app {
                 rect.bottom.saturating_sub(rect.top),
             )
         } else {
-            (430, 451)
+            // SETTINGS_CLIENT_HEIGHT 를 29px 늘린 만큼 비상 대체값도 같이 늘려둔다.
+            (430, 480)
         }
     }
 
@@ -2674,6 +2698,11 @@ mod windows_app {
                 CTRL_KOREAN_BACKGROUND_COLOR,
                 "한글 배경색",
                 state.config.korean_background_color,
+            ),
+            (
+                CTRL_FULLSHAPE_WARNING_COLOR,
+                "전자(全角) 경고 배경색",
+                state.config.fullshape_warning_color,
             ),
         ];
         for (id, label, color) in color_fields {
@@ -3584,9 +3613,11 @@ mod windows_app {
             let position_y = first_control_top + 4 * 29 + 5;
             let position =
                 settings_field_layout(layout, position_y, SETTINGS_POSITION_COMBO_WIDTH);
+            // 색상 필드가 5개(기존 4개 + 전자 경고색)이므로 마지막 필드는
+            // position_y + 5 * 29 에 위치한다.
             let last_color = settings_field_layout(
                 layout,
-                position_y + 4 * 29,
+                position_y + 5 * 29,
                 SETTINGS_COLOR_EDIT_WIDTH,
             );
 

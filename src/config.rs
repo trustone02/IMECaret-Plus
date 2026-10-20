@@ -49,6 +49,11 @@ pub const DEFAULT_JAPANESE_BACKGROUND_COLOR: RgbaColor =
     RgbaColor::new(0x62, 0xff, 0x62, 0xa5);
 pub const DEFAULT_KOREAN_BACKGROUND_COLOR: RgbaColor =
     RgbaColor::new(0x62, 0x62, 0xff, 0xa5);
+// 전자(全角) 모드일 때 눈에 띄도록 쓰는 경고색. SSMS 등에서 모르고 전자 모드로
+// 타이핑하다 쿼리가 깨지는 사고를 막기 위한 것이라 다른 배경색보다 더 진하고
+// 채도가 높게 잡는다(기본 알파 0xa5 대신 0xe6으로 더 불투명하게).
+pub const DEFAULT_FULLSHAPE_WARNING_COLOR: RgbaColor =
+    RgbaColor::new(0xff, 0x2a, 0x00, 0xe6);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IndicatorPosition {
@@ -103,6 +108,7 @@ pub struct Config {
     pub english_background_color: RgbaColor,
     pub japanese_background_color: RgbaColor,
     pub korean_background_color: RgbaColor,
+    pub fullshape_warning_color: RgbaColor,
 }
 
 impl Default for Config {
@@ -117,6 +123,7 @@ impl Default for Config {
             english_background_color: DEFAULT_ENGLISH_BACKGROUND_COLOR,
             japanese_background_color: DEFAULT_JAPANESE_BACKGROUND_COLOR,
             korean_background_color: DEFAULT_KOREAN_BACKGROUND_COLOR,
+            fullshape_warning_color: DEFAULT_FULLSHAPE_WARNING_COLOR,
         }
     }
 }
@@ -178,6 +185,9 @@ impl Config {
                 "koreanbackgroundcolor" => {
                     set_color(&mut config.korean_background_color, raw_value)
                 }
+                "fullshapewarningcolor" => {
+                    set_color(&mut config.fullshape_warning_color, raw_value)
+                }
                 _ => {}
             }
         }
@@ -197,7 +207,8 @@ impl Config {
                 "IndicatorTextColor={}\r\n",
                 "EnglishBackgroundColor={}\r\n",
                 "JapaneseBackgroundColor={}\r\n",
-                "KoreanBackgroundColor={}\r\n"
+                "KoreanBackgroundColor={}\r\n",
+                "FullshapeWarningColor={}\r\n"
             ),
             as_ini_bool(self.play_english_sound),
             as_ini_bool(self.play_japanese_sound),
@@ -208,6 +219,7 @@ impl Config {
             self.english_background_color.as_rrggbbaa(),
             self.japanese_background_color.as_rrggbbaa(),
             self.korean_background_color.as_rrggbbaa(),
+            self.fullshape_warning_color.as_rrggbbaa(),
         );
 
         if let Some(parent) = path.parent() {
@@ -273,6 +285,10 @@ mod tests {
             "62FF62A5"
         );
         assert_eq!(config.korean_background_color.as_rrggbbaa(), "6262FFA5");
+        assert_eq!(
+            config.fullshape_warning_color.as_rrggbbaa(),
+            "FF2A00E6"
+        );
     }
 
     #[test]
@@ -332,6 +348,7 @@ mod tests {
         config.english_background_color = RgbaColor::new(5, 6, 7, 8);
         config.japanese_background_color = RgbaColor::new(9, 10, 11, 12);
         config.korean_background_color = RgbaColor::new(13, 14, 15, 16);
+        config.fullshape_warning_color = RgbaColor::new(17, 18, 19, 20);
         config.save(&path).unwrap();
 
         let loaded = Config::load(&path);
@@ -346,5 +363,9 @@ mod tests {
             config.japanese_background_color
         );
         assert_eq!(loaded.korean_background_color, config.korean_background_color);
+        assert_eq!(
+            loaded.fullshape_warning_color,
+            config.fullshape_warning_color
+        );
     }
 }

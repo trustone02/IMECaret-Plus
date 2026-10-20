@@ -508,6 +508,10 @@ pub const IMC_GETOPENSTATUS: WPARAM = 0x0005;
 pub const SMTO_BLOCK: UINT = 0x0001;
 pub const SMTO_ABORTIFHUNG: UINT = 0x0002;
 
+// IME conversion-mode bit returned by ImmGetConversionStatus / IMC_GETCONVERSIONMODE.
+// Set when the IME is in full-width (전자, zenkaku) shape; clear in half-width (반자).
+pub const IME_CMODE_FULLSHAPE: u32 = 0x0008;
+
 // Keyboard state.
 pub const VK_SHIFT: i32 = 0x10;
 pub const VK_CONTROL: i32 = 0x11;

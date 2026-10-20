@@ -1,0 +1,4 @@
+# 다른 PC에 Visual C++ 런타임(VCRUNTIME140.dll)이 없어도 바로 실행되도록
+# MSVC CRT를 정적으로 링크한다.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
