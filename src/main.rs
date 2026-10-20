@@ -54,6 +54,7 @@ mod windows_app {
     const TRAY_HINT_TIMER_ID: usize = 2;
     const KEYBOARD_ACTIVITY_TIMER_ID: usize = 3;
     const TASK_MANAGER_IME_STATE_TIMER_ID: usize = 4;
+    const HWP_LETTER_PROBE_TIMER_ID: usize = 5;
     const TASK_MANAGER_IME_STATE_POLL_INTERVAL_MS: u32 = 50;
     const TRAY_ID: u32 = 1;
     const ACTIVE_IME_POLL_INTERVAL_MS: u32 = 100;
@@ -2172,6 +2173,12 @@ mod windows_app {
                                 crate::hwp::toggle_hwp_hangul_state();
                                 state.refresh_ime_state_only();
                             }
+                        } else if (0x41..=0x5a).contains(&signal.virtual_key)
+                            && crate::hwp::is_hwp_window(GetForegroundWindow())
+                            && crate::hwp::on_hwp_letter_key()
+                        {
+                            // 글자 키 직후 캐럿 이동 여부로 한/영 상태를 교정한다.
+                            SetTimer(hwnd, HWP_LETTER_PROBE_TIMER_ID, crate::hwp::LETTER_PROBE_DELAY_MS, None);
                         }
                         state.on_keyboard_activity(Some(signal));
                     }
@@ -2188,6 +2195,13 @@ mod windows_app {
             }
             WM_TIMER if wparam == KEYBOARD_ACTIVITY_TIMER_ID => {
                 state.on_keyboard_activity_timer();
+                0
+            }
+            WM_TIMER if wparam == HWP_LETTER_PROBE_TIMER_ID => {
+                KillTimer(hwnd, HWP_LETTER_PROBE_TIMER_ID);
+                if crate::hwp::evaluate_letter_probe() {
+                    state.refresh_ime_state_only();
+                }
                 0
             }
             WM_TIMER if wparam == TASK_MANAGER_IME_STATE_TIMER_ID => {

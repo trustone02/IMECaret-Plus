@@ -6,8 +6,9 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-// 아래한글 한/영 상태 관리 플래그 (기본값 영문: false - 아래한글은 영문 입력 상태로 시작한다)
-static HWP_IS_HANGUL: AtomicBool = AtomicBool::new(false);
+// 아래한글 한/영 상태 관리 플래그 (기본값 한글: true - 사용자가 직접 실행한 아래한글은 한글 입력 모드로
+// 시작하는 것을 실측 확인)
+static HWP_IS_HANGUL: AtomicBool = AtomicBool::new(true);
 
 // 한/영 키 연타 및 0x15/0xa5 중복 토글 방지용 디바운스 타이머 (150ms)
 static LAST_TOGGLE_TICK: Mutex<Option<Instant>> = Mutex::new(None);
@@ -44,7 +45,7 @@ pub fn log_line(message: &str) {
     }
 }
 
-// 상태를 추적 중인 아래한글 프로세스 ID. 새 프로세스(=새로 시작한 아래한글)는 영문 상태로 시작한다.
+// 상태를 추적 중인 아래한글 프로세스 ID. 새 프로세스(=새로 시작한 아래한글)는 한글 상태로 시작한다.
 static HWP_PID: AtomicU32 = AtomicU32::new(0);
 
 fn state_file_path() -> Option<std::path::PathBuf> {
@@ -81,15 +82,160 @@ unsafe fn adopt_hwp_process(window: HWND) {
         return;
     }
     let restored = load_saved_state(pid);
-    HWP_IS_HANGUL.store(restored.unwrap_or(false), Ordering::SeqCst);
+    HWP_IS_HANGUL.store(restored.unwrap_or(true), Ordering::SeqCst);
     log_line(&format!(
         "[HWP] 아래한글 프로세스 {} 감지 -> 상태 {}",
         pid,
         match restored {
             Some(v) => format!("복원 flag={}", v),
-            None => "새 프로세스, 영문으로 초기화".to_string(),
+            None => "새 프로세스, 한글로 초기화".to_string(),
         }
     ));
+}
+
+// ---- 캐럿 정지 기반 한글 상태 보정 (한글 쪽으로만) ----
+// 아래한글의 한/영 모드는 외부에서 읽을 수 없고 시작 모드도 일정하지 않다. 글자 키를 눌렀는데 캐럿이
+// 전혀 움직이지 않는 것은 한글 조합 중에서만 나타나는 현상(영문은 항상 즉시 이동)이므로, 이 경우에만
+// "한글"로 보정한다. 반대로 캐럿이 움직인다는 것은 영문의 증거가 아니다(한글 입력 중에도 연속해서
+// 움직임을 실측 확인). 따라서 영문으로 바꾸는 추측은 하지 않고, 영문 전환은 한/영 키로만 이루어진다.
+pub const LETTER_PROBE_DELAY_MS: u32 = 80;
+const LETTER_PROBE_STALE: Duration = Duration::from_millis(1500);
+const MIN_ADVANCE_PX: i32 = 3;
+
+struct LetterProbe {
+    settled: Option<(Instant, i32, i32)>,
+    before: Option<(i32, i32)>,
+    pending: bool,
+}
+
+static LETTER_PROBE: Mutex<LetterProbe> = Mutex::new(LetterProbe {
+    settled: None,
+    before: None,
+    pending: false,
+});
+
+fn lock_probe() -> std::sync::MutexGuard<'static, LetterProbe> {
+    match LETTER_PROBE.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+fn reset_letter_probe() {
+    let mut probe = lock_probe();
+    probe.settled = None;
+    probe.before = None;
+    probe.pending = false;
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum CaretEvidence {
+    /// 캐럿이 즉시 오른쪽으로 이동 (영문 입력, 또는 한글 글자 확정)
+    Advanced,
+    /// 캐럿이 그대로 (한글 조합 중)
+    Stationary,
+    /// 줄 바꿈이나 뒤로 이동 등 판단 불가
+    Unknown,
+}
+
+fn caret_evidence(before: (i32, i32), after: (i32, i32)) -> CaretEvidence {
+    if after.1 != before.1 {
+        CaretEvidence::Unknown
+    } else if after.0 - before.0 >= MIN_ADVANCE_PX {
+        CaretEvidence::Advanced
+    } else if after.0 == before.0 {
+        CaretEvidence::Stationary
+    } else {
+        CaretEvidence::Unknown
+    }
+}
+
+/// 아래한글 UI 스레드의 시스템 캐럿 (left, top). 캐럿이 없으면 None.
+unsafe fn hwp_caret_pos() -> Option<(i32, i32)> {
+    let fg = GetForegroundWindow();
+    if fg.is_null() {
+        return None;
+    }
+    let tid = GetWindowThreadProcessId(fg, null_mut());
+    let mut info: GUITHREADINFO = zeroed();
+    info.cbSize = std::mem::size_of::<GUITHREADINFO>() as u32;
+    if tid == 0 || GetGUIThreadInfo(tid, &mut info) == FALSE || info.hwndCaret.is_null() {
+        return None;
+    }
+    let rc = info.rcCaret;
+    if rc.left == 0 && rc.right == 0 && rc.top == 0 && rc.bottom == 0 {
+        return None;
+    }
+    Some((rc.left, rc.top))
+}
+
+unsafe fn infer_hangul(hangul: bool, reason: &str) -> bool {
+    let fg = GetForegroundWindow();
+    adopt_hwp_process(fg);
+    let prev = HWP_IS_HANGUL.swap(hangul, Ordering::SeqCst);
+    if prev == hangul {
+        return false;
+    }
+    let mut pid = 0u32;
+    GetWindowThreadProcessId(fg, &mut pid);
+    if pid != 0 {
+        save_state(pid, hangul);
+    }
+    log_line(&format!("[INFER] {} -> 상태 교정 {} -> {}", reason, prev, hangul));
+    true
+}
+
+/// 아래한글에서 수식키 없이 글자 키(A-Z)를 눌렀을 때 호출. 판별용 타이머를 예약해야 하면 true.
+pub fn on_hwp_letter_key() -> bool {
+    unsafe {
+        // Ctrl/Alt/Win 조합은 입력이 아니라 단축키이므로 제외
+        for vk in [0x11, 0x12, 0x5B, 0x5C] {
+            if GetAsyncKeyState(vk) as u16 & 0x8000 != 0 {
+                return false;
+            }
+        }
+    }
+    let mut probe = lock_probe();
+    if probe.pending {
+        return false;
+    }
+    probe.pending = true;
+    probe.before = match probe.settled {
+        Some((tick, x, y)) if tick.elapsed() <= LETTER_PROBE_STALE => Some((x, y)),
+        _ => None,
+    };
+    true
+}
+
+/// 판별 타이머 만료 시 호출. 상태가 바뀌었으면 true.
+pub fn evaluate_letter_probe() -> bool {
+    let (before, was_pending) = {
+        let mut probe = lock_probe();
+        let was = probe.pending;
+        probe.pending = false;
+        (probe.before.take(), was)
+    };
+    if !was_pending {
+        return false;
+    }
+
+    let after = unsafe { hwp_caret_pos() };
+    let Some((ax, ay)) = after else {
+        reset_letter_probe();
+        return false;
+    };
+
+    let mut changed = false;
+    if let Some(before) = before {
+        match caret_evidence(before, (ax, ay)) {
+            CaretEvidence::Advanced | CaretEvidence::Unknown => {}
+            CaretEvidence::Stationary => {
+                changed = unsafe { infer_hangul(true, "글자 키 입력에도 캐럿 정지(한글 조합 중)") };
+            }
+        }
+    }
+    lock_probe().settled = Some((Instant::now(), ax, ay));
+    changed
 }
 
 /// IMM 기준 한/영 상태 조회. 조회 불가 시 None.
@@ -161,6 +307,7 @@ pub fn toggle_hwp_hangul_state() {
     unsafe {
         adopt_hwp_process(GetForegroundWindow());
     }
+    reset_letter_probe();
     let _prev = HWP_IS_HANGUL.fetch_xor(true, Ordering::SeqCst);
     unsafe {
         let fg = GetForegroundWindow();
@@ -408,5 +555,19 @@ mod tests {
         // force_set은 포커스 진입 등 긴급 상황에서 즉각 반영
         force_set_hwp_hangul_state(true);
         assert!(is_hwp_hangul());
+    }
+
+    #[test]
+    fn caret_evidence_matches_measured_english_and_hangul_behavior() {
+        // 영문 실측: d +18, i +9
+        assert_eq!(caret_evidence((282, 403), (300, 403)), CaretEvidence::Advanced);
+        assert_eq!(caret_evidence((355, 403), (364, 403)), CaretEvidence::Advanced);
+        // 한글 조합 중 실측: 캐럿 정지
+        assert_eq!(caret_evidence((379, 547), (379, 547)), CaretEvidence::Stationary);
+        // 한글 확정 시 +29
+        assert_eq!(caret_evidence((379, 547), (408, 547)), CaretEvidence::Advanced);
+        // 줄 바꿈 / 뒤로 이동은 판단 불가
+        assert_eq!(caret_evidence((900, 403), (282, 451)), CaretEvidence::Unknown);
+        assert_eq!(caret_evidence((400, 403), (300, 403)), CaretEvidence::Unknown);
     }
 }
