@@ -2,12 +2,29 @@ use crate::ime::{ImeSnapshot, Validity};
 use crate::win::*;
 use std::mem::zeroed;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 // 아래한글 한/영 상태 관리 플래그 (기본값 한글: true)
 static HWP_IS_HANGUL: AtomicBool = AtomicBool::new(true);
 
+// 한/영 키 연타 및 0x15/0xa5 중복 토글 방지용 디바운스 타이머 (150ms)
+static LAST_TOGGLE_TICK: Mutex<Option<Instant>> = Mutex::new(None);
+
 /// 한/영 키 입력 시 호출되는 상태 토글 함수 (Raw Input 연동)
 pub fn toggle_hwp_hangul_state() {
+    let now = Instant::now();
+    let mut last = match LAST_TOGGLE_TICK.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if let Some(t) = *last {
+        if now.duration_since(t) < Duration::from_millis(150) {
+            return;
+        }
+    }
+    *last = Some(now);
+
     let _prev = HWP_IS_HANGUL.fetch_xor(true, Ordering::SeqCst);
     #[cfg(debug_assertions)]
     println!("[HWP] 한/영 토글: {} -> {}", _prev, !_prev);
@@ -63,7 +80,26 @@ pub fn is_hwp_window(window: HWND) -> bool {
 }
 
 /// 아래한글 활성 시 하이브리드 IME 스냅샷 조회 함수
-pub fn query_hwp_ime_snapshot(_main_window: HWND) -> ImeSnapshot {
+pub fn query_hwp_ime_snapshot(main_window: HWND) -> ImeSnapshot {
+    // OS 레벨의 IME 상태(ImmGetDefaultIMEWnd / ImmGetContext)를 조회하여
+    // 유효한 상태가 있으면 HWP_IS_HANGUL을 실시간 동기화
+    if !main_window.is_null() {
+        unsafe {
+            let def_ime = ImmGetDefaultIMEWnd(main_window);
+            let target = if !def_ime.is_null() { def_ime } else { main_window };
+            let imc = ImmGetContext(target);
+            if !imc.is_null() {
+                let mut conv = 0u32;
+                let mut sent = 0u32;
+                if ImmGetConversionStatus(imc, &mut conv, &mut sent) != FALSE {
+                    let is_hangul = (conv & IME_CMODE_HANGUL) != 0;
+                    HWP_IS_HANGUL.store(is_hangul, Ordering::Relaxed);
+                }
+                ImmReleaseContext(target, imc);
+            }
+        }
+    }
+
     let is_hangul = HWP_IS_HANGUL.load(Ordering::Relaxed);
 
     ImeSnapshot {
