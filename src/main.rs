@@ -270,6 +270,7 @@ mod windows_app {
         active_shell_overlay: Option<RECT>,
         active_focused_host: FocusedInputHost,
         active_task_manager_search: bool,
+        active_hwp: bool,
         task_manager_ime_process_id: u32,
         task_manager_korean_open: Option<bool>,
     }
@@ -338,6 +339,7 @@ mod windows_app {
                 active_shell_overlay: None,
                 active_focused_host: FocusedInputHost::default(),
                 active_task_manager_search: false,
+                active_hwp: false,
                 task_manager_ime_process_id: 0,
                 task_manager_korean_open: None,
             }
@@ -551,8 +553,10 @@ mod windows_app {
             // The indicator follows only a positively identified editable caret.
             let input_context = FocusedInputContext::capture();
             let task_manager_search = task_manager_search_is_active(input_context);
-            if task_manager_search {
-                if !self.active_task_manager_search
+            let is_hwp = crate::hwp::is_hwp_window(input_context.foreground);
+            let special_ime = task_manager_search || is_hwp;
+            if special_ime {
+                if (!self.active_task_manager_search && !self.active_hwp)
                     || self.task_manager_ime_process_id != input_context.process_id
                 {
                     self.task_manager_ime_process_id = input_context.process_id;
@@ -563,7 +567,7 @@ mod windows_app {
                     };
                 }
             }
-            self.set_task_manager_search_active(task_manager_search);
+            self.set_special_ime_active(task_manager_search, is_hwp);
             let editability = self
                 .editability_detector
                 .focused_input_with_context(input_context);
@@ -757,23 +761,28 @@ mod windows_app {
         }
 
         fn apply_task_manager_ime_override(&self, mut snapshot: ImeSnapshot) -> ImeSnapshot {
-            if self.active_task_manager_search
+            if (self.active_task_manager_search || self.active_hwp)
                 && (snapshot.language_id & 0x03ff) == 0x12
             {
                 if let Some(is_open) = self.task_manager_korean_open {
                     snapshot.is_open = is_open;
                     snapshot.conversion_mode = if is_open { 1 } else { 0 };
+                    snapshot.validity = Validity::Live;
                 }
             }
             snapshot
         }
 
-        unsafe fn set_task_manager_search_active(&mut self, active: bool) {
-            if self.active_task_manager_search == active {
+        unsafe fn set_special_ime_active(&mut self, tm_active: bool, hwp_active: bool) {
+            let active = tm_active || hwp_active;
+            let was_active = self.active_task_manager_search || self.active_hwp;
+            self.active_task_manager_search = tm_active;
+            self.active_hwp = hwp_active;
+
+            if active == was_active {
                 return;
             }
 
-            self.active_task_manager_search = active;
             if active {
                 self.editability_detector.reset_taskbar_input_retry();
                 self.refresh_task_manager_ime_from_system_indicator();
@@ -789,17 +798,22 @@ mod windows_app {
         }
 
         unsafe fn on_task_manager_ime_state_timer(&mut self) {
-            if self.cleaning_up || !self.active_task_manager_search {
+            if self.cleaning_up || (!self.active_task_manager_search && !self.active_hwp) {
                 return;
             }
 
             let input_context = FocusedInputContext::capture();
-            if !task_manager_search_is_active(input_context) {
-                self.set_task_manager_search_active(false);
+            let tm = task_manager_search_is_active(input_context);
+            let hwp = crate::hwp::is_hwp_window(input_context.foreground);
+            if !tm && !hwp {
+                self.set_special_ime_active(false, false);
                 return;
             }
 
             if self.refresh_task_manager_ime_from_system_indicator() {
+                if let Some(open) = self.task_manager_korean_open {
+                    crate::hwp::set_hwp_hangul_state(open);
+                }
                 self.last_activity = Instant::now();
                 self.refresh_ime_state_only();
             }
