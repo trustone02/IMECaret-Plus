@@ -28,15 +28,18 @@ Write-Host "[3/4] Preparing distribution folder"
 $dist = Join-Path $PSScriptRoot "dist"
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
-$sourceExe = Join-Path $PSScriptRoot "target\release\ime-caret.exe"
-$targetExe = Join-Path $dist "IMECaret.exe"
-$targetLegacyExe = Join-Path $dist "ime-caret.exe"
+$sourceExe = Join-Path $PSScriptRoot "target\release\IMECaretPlus.exe"
+$targetExe = Join-Path $dist "IMECaretPlus.exe"
 Copy-Item -Force $sourceExe $targetExe
-Copy-Item -Force $sourceExe $targetLegacyExe
+# 구버전 호환 이름 (설치 스크립트가 함께 배포)
+Copy-Item -Force $sourceExe (Join-Path $dist "IMECaret.exe")
+Copy-Item -Force $sourceExe (Join-Path $dist "ime-caret.exe")
 
-$targetConfig = Join-Path $dist "IMECaret.ini"
-if (-not (Test-Path -LiteralPath $targetConfig)) {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "IMECaret.ini") -Destination $targetConfig
+foreach ($ini in @("IMECaretPlus.ini", "IMECaret.ini")) {
+    $targetConfig = Join-Path $dist $ini
+    if (-not (Test-Path -LiteralPath $targetConfig)) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "IMECaret.ini") -Destination $targetConfig
+    }
 }
 
 foreach ($name in @("IMEE.wav", "IMEJ.wav", "IMEK.wav")) {
@@ -56,7 +59,7 @@ if ($iscc) {
     $issFile = Join-Path $PSScriptRoot "installer\installer.iss"
     & $iscc $issFile
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
-    $setupExe = Join-Path $PSScriptRoot "installer\Output\IMECaret-Setup.exe"
+    $setupExe = Join-Path $PSScriptRoot "installer\Output\IMECaretPlus-Setup.exe"
     Write-Host "Installer created: $setupExe"
 } else {
     Write-Warning "Inno Setup ISCC.exe not found. Skipped installer packaging."
@@ -65,4 +68,4 @@ if ($iscc) {
 Write-Host ""
 Write-Host "Build complete!"
 Write-Host "  Binary:    $targetExe"
-Write-Host "  Installer: $(Join-Path $PSScriptRoot 'installer\Output\IMECaret-Setup.exe')"
+Write-Host "  Installer: $(Join-Path $PSScriptRoot 'installer\Output\IMECaretPlus-Setup.exe')"

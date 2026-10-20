@@ -44,7 +44,7 @@ mod windows_app {
     use std::time::{Duration, Instant};
 
     const APP_NAME: &str = "IMECaret Plus";
-    const APP_VERSION: &str = "1.0";
+    const APP_VERSION: &str = "1.1";
     const MAIN_CLASS: &str = "IMECaretPlus.MainWindow";
     const BADGE_CLASS: &str = "IMECaretPlus.BadgeWindow";
     const SETTINGS_CLASS: &str = "IMECaretPlus.SettingsWindow";
@@ -780,6 +780,12 @@ mod windows_app {
                 return;
             }
 
+            if hwp_newly_focused {
+                crate::hwp::log_line(&format!(
+                    "[FOCUS] 아래한글 진입 flag={}",
+                    crate::hwp::is_hwp_hangul()
+                ));
+            }
             if active {
                 self.editability_detector.reset_taskbar_input_retry();
                 if self.refresh_task_manager_ime_from_system_indicator() {
@@ -1945,6 +1951,15 @@ mod windows_app {
     }
 
     pub fn run() {
+        std::panic::set_hook(Box::new(|info| {
+            crate::hwp::log_line(&format!("[PANIC] {}", info));
+        }));
+        crate::hwp::log_line(&format!(
+            "[START] pid={} cwd={:?} exe={:?}",
+            std::process::id(),
+            std::env::current_dir().ok(),
+            std::env::current_exe().ok()
+        ));
         unsafe {
             if SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) == FALSE {
                 SetProcessDPIAware();
@@ -1957,6 +1972,7 @@ mod windows_app {
                 return;
             }
             if GetLastError() == ERROR_ALREADY_EXISTS {
+                crate::hwp::log_line("[START] 이미 실행 중인 인스턴스가 있어 종료");
                 let class = wide(MAIN_CLASS);
                 let existing = FindWindowW(class.as_ptr(), null());
                 if !existing.is_null() {
@@ -2149,6 +2165,8 @@ mod windows_app {
                             || (signal.virtual_key == 0x12 && (signal.flags & RI_KEY_E0 != 0))
                             || (signal.make_code == 0x38 && (signal.flags & RI_KEY_E0 != 0));
                         if is_hangul_key {
+                            // 아래한글의 한/영 상태는 자체 엔진 내부 상태이며 다른 프로그램에서 누른
+                            // 한/영 키와 무관하다(실측). 아래한글이 포그라운드일 때의 키만 센다.
                             let fg = GetForegroundWindow();
                             if crate::hwp::is_hwp_window(fg) {
                                 crate::hwp::toggle_hwp_hangul_state();
@@ -3839,7 +3857,7 @@ mod windows_app {
 
         #[test]
         fn tray_tooltip_contains_program_name_and_version() {
-            assert_eq!(tray_tooltip_text(), "IMECaret Plus 1.0");
+            assert_eq!(tray_tooltip_text(), "IMECaret Plus 1.1");
         }
 
         #[test]

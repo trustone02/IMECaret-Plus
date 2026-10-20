@@ -3319,7 +3319,19 @@ unsafe fn find_taskbar_input_indicator(
 }
 
 unsafe fn taskbar_input_mode_from_element(element: *mut c_void) -> Option<bool> {
-    let name = property_string(element, UIA_NAME_PROPERTY_ID)?.to_ascii_lowercase();
+    let name = property_string(element, UIA_NAME_PROPERTY_ID)?;
+    let class_name = property_string(element, UIA_CLASS_NAME_PROPERTY_ID).unwrap_or_default();
+    taskbar_input_mode_from_label(&class_name, &name)
+}
+
+/// 작업표시줄 요소의 (클래스, 이름)으로부터 한/영 입력 모드를 판정한다.
+/// 실행 중인 앱의 작업표시줄 버튼("한글 2018 - 1개 실행 창" 등)은 이름에 "한글"/"Korean"이
+/// 들어갈 수 있으므로 입력 표시기 후보에서 제외한다.
+fn taskbar_input_mode_from_label(class_name: &str, name: &str) -> Option<bool> {
+    if class_name.starts_with("Taskbar.TaskList") {
+        return None;
+    }
+    let name = name.to_ascii_lowercase();
     let trimmed = name.trim();
     if trimmed.contains("한국어")
         || trimmed.contains("korean")
@@ -4404,5 +4416,31 @@ mod tests {
         assert_eq!(size_of::<VARIANT>(), 24);
         #[cfg(target_pointer_width = "32")]
         assert_eq!(size_of::<VARIANT>(), 16);
+    }
+}
+
+#[cfg(test)]
+mod taskbar_indicator_tests {
+    use super::taskbar_input_mode_from_label;
+
+    #[test]
+    fn running_app_taskbar_button_is_not_an_input_indicator() {
+        assert_eq!(
+            taskbar_input_mode_from_label(
+                "Taskbar.TaskListButtonAutomationPeer",
+                "한글 2018 - 1개 실행 창"
+            ),
+            None
+        );
+        assert_eq!(
+            taskbar_input_mode_from_label("Taskbar.TaskListButtonAutomationPeer", "Korean app"),
+            None
+        );
+    }
+
+    #[test]
+    fn tray_indicator_labels_still_resolve() {
+        assert_eq!(taskbar_input_mode_from_label("SystemTray.NormalButton", "한국어 입력 모드"), Some(true));
+        assert_eq!(taskbar_input_mode_from_label("SystemTray.NormalButton", "영어 입력 모드"), Some(false));
     }
 }

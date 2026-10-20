@@ -1,6 +1,6 @@
 ; IMECaret Plus 공식 설치 프로그램 스크립트 (Inno Setup)
 #define MyAppName "IMECaret Plus"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppExeName "IMECaretPlus.exe"
 #define MyAppPublisher "shinz"
 
@@ -40,6 +40,8 @@ Source: "..\dist\*.wav"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoes
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+; Run 키만으로 시작프로그램이 실행되지 않는 환경을 대비한 보조 등록 (중복 실행은 프로그램의 단일 실행 잠금이 방지)
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: startupicon
 
 [Registry]
 ; 사용자가 설치 시 "Windows 시작 시 자동으로 실행"에 체크했을 때만 시작프로그램(Run 키)에 등록
@@ -52,6 +54,8 @@ Type: files; Name: "{app}\*.wav"
 Type: files; Name: "{app}\*.exe"
 Type: filesandordirs; Name: "{app}"
 Type: filesandordirs; Name: "{group}"
+; 프로그램이 남긴 로그 및 아래한글 상태 저장 파일
+Type: filesandordirs; Name: "{localappdata}\IMECaretPlus"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "설치 완료 후 IMECaret Plus 실행하기"; Flags: nowait postinstall skipifsilent
@@ -65,6 +69,21 @@ begin
   Result := True;
   Exec('taskkill.exe', '/F /IM IMECaretPlus.exe /IM IMECaret.exe /IM ime-caret.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(200);
+end;
+
+// 구버전(IME Caret) 설치본이 남긴 시작프로그램 항목 정리: 새 항목과 중복 실행되거나
+// 삭제된 경로를 가리키는 것을 방지한다.
+procedure CleanLegacyStartup();
+begin
+  RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'IMECaret');
+  RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run', 'IMECaret');
+  DeleteFile(ExpandConstant('{userstartup}\IMECaret.lnk'));
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    CleanLegacyStartup();
 end;
 
 // 언인스톨 시작 시 실행 중인 프로세스 안전 종료 (파일 Lock 해제)
