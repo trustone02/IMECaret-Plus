@@ -12,6 +12,9 @@ static HWP_IS_HANGUL: AtomicBool = AtomicBool::new(true);
 // 한/영 키 연타 및 0x15/0xa5 중복 토글 방지용 디바운스 타이머 (150ms)
 static LAST_TOGGLE_TICK: Mutex<Option<Instant>> = Mutex::new(None);
 
+// 사용자가 키보드로 직접 한/영 키를 입력한 시각 (시스템 인디케이터 조기 덮어쓰기 방지용 유예 타이머: 350ms)
+static LAST_USER_KEY_TICK: Mutex<Option<Instant>> = Mutex::new(None);
+
 /// 한/영 키 입력 시 호출되는 상태 토글 함수 (Raw Input 연동)
 pub fn toggle_hwp_hangul_state() {
     let now = Instant::now();
@@ -26,15 +29,37 @@ pub fn toggle_hwp_hangul_state() {
     }
     *last = Some(now);
 
+    if let Ok(mut key_tick) = LAST_USER_KEY_TICK.lock() {
+        *key_tick = Some(now);
+    }
+
     let _prev = HWP_IS_HANGUL.fetch_xor(true, Ordering::SeqCst);
     #[cfg(debug_assertions)]
     println!("[HWP] 한/영 토글: {} -> {}", _prev, !_prev);
 }
 
+/// OS 작업표시줄 UIA 시스템 인디케이터로부터 한/영 상태를 동기화
+/// (단, 사용자가 직접 한/영 키를 누른 직후 350ms 동안은 OS 셸의 지연된 상태로 덮어쓰지 않음)
+pub fn set_hwp_hangul_state_from_system(is_hangul: bool) {
+    if let Ok(guard) = LAST_USER_KEY_TICK.lock() {
+        if let Some(t) = *guard {
+            if Instant::now().duration_since(t) < Duration::from_millis(350) {
+                return;
+            }
+        }
+    }
+    HWP_IS_HANGUL.store(is_hangul, Ordering::SeqCst);
+}
+
+/// 강제 상태 설정 (창 포커스 진입 시 즉각 동기화)
+pub fn force_set_hwp_hangul_state(is_hangul: bool) {
+    HWP_IS_HANGUL.store(is_hangul, Ordering::SeqCst);
+}
+
 /// 현재 한/영 상태 설정
 #[allow(dead_code)]
 pub fn set_hwp_hangul_state(is_hangul: bool) {
-    HWP_IS_HANGUL.store(is_hangul, Ordering::SeqCst);
+    set_hwp_hangul_state_from_system(is_hangul);
 }
 
 /// 현재 한/영 상태 조회
@@ -167,4 +192,30 @@ pub unsafe fn find_hwp_win32_caret(window: HWND) -> Option<crate::editability::C
     }
 
     result
+}
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hwp_hangul_state_toggle_and_grace_period_protection() {
+        force_set_hwp_hangul_state(true);
+        assert!(is_hwp_hangul());
+
+        // 키 토글 실행: 한글 -> 영문
+        toggle_hwp_hangul_state();
+        assert!(!is_hwp_hangul());
+
+        // 키 입력 직후(350ms 이내)에 시스템 UIA가 구 상태(한글: true)로 덮어쓰려 할 때 무시(보호)
+        set_hwp_hangul_state_from_system(true);
+        assert!(!is_hwp_hangul(), "키 입력 직후에는 시스템의 지연된 상태로 덮어쓰지 않아야 함");
+
+        // force_set은 포커스 진입 등 긴급 상황에서 즉각 반영
+        force_set_hwp_hangul_state(true);
+        assert!(is_hwp_hangul());
+    }
 }

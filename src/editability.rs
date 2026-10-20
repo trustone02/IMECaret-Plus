@@ -3320,9 +3320,20 @@ unsafe fn find_taskbar_input_indicator(
 
 unsafe fn taskbar_input_mode_from_element(element: *mut c_void) -> Option<bool> {
     let name = property_string(element, UIA_NAME_PROPERTY_ID)?.to_ascii_lowercase();
-    if name.contains("한국어 입력 모드") || name.contains("korean input mode") {
+    let trimmed = name.trim();
+    if trimmed.contains("한국어")
+        || trimmed.contains("korean")
+        || trimmed == "한"
+        || trimmed.starts_with("한 ")
+        || trimmed.contains("한글")
+    {
         Some(true)
-    } else if name.contains("영어 입력 모드") || name.contains("english input mode") {
+    } else if trimmed.contains("영어")
+        || trimmed.contains("english")
+        || trimmed == "a"
+        || trimmed.starts_with("a ")
+        || trimmed.contains("영문")
+    {
         Some(false)
     } else {
         None
