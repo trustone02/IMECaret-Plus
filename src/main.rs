@@ -2816,6 +2816,11 @@ mod windows_app {
                 "한글 배경색",
                 state.config.korean_background_color,
             ),
+            (
+                CTRL_FULLSHAPE_WARNING_COLOR,
+                "전자(全角) 경고색",
+                state.config.fullshape_warning_color,
+            ),
         ];
         for (id, label, color) in color_fields {
             let field_layout = settings_field_layout(layout, y, SETTINGS_COLOR_EDIT_WIDTH);

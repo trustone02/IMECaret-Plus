@@ -690,18 +690,18 @@ impl EditabilityDetector {
         if foreground_profile.hwp {
             for window in [targets.focus, targets.caret, targets.active, targets.foreground] {
                 if let Some(anchor) = accessible_system_caret_anchor(window) {
-                    return Some(anchor);
+                    return Some(hwp_caret_anchor(anchor));
                 }
             }
             if let Some(anchor) = win32_caret_anchor(targets) {
-                return Some(anchor);
+                return Some(hwp_caret_anchor(anchor));
             }
             if let CaretProbeResult::Found(anchor) = self.uia_focused_caret_anchor(targets, false, false, false) {
-                return Some(anchor);
+                return Some(hwp_caret_anchor(anchor));
             }
             let probe_window = if !targets.focus.is_null() { targets.focus } else { targets.foreground };
             if let Some(anchor) = crate::hwp::find_hwp_win32_caret(probe_window) {
-                return Some(anchor);
+                return Some(hwp_caret_anchor(anchor));
             }
             // 아래한글 본문 뷰는 자체 렌더링으로 캐럿 좌표를 제공하지 않으므로
             // 엉뚱한 문서 여백에 가짜 배지가 고정되는 오작동을 방지하기 위해 배지를 숨깁니다.
@@ -1896,6 +1896,18 @@ impl Drop for EditabilityDetector {
 }
 
 type ForegroundFocusTargets = FocusedInputContext;
+
+/// 아래한글이 보고하는 캐럿 사각형은 실제 캐럿 막대의 "바로 아래"에서 시작한다(실측: 사각형 top이
+/// 캐럿 막대의 아래끝과 일치). 그대로 쓰면 배지가 사각형 높이만큼 더 아래로 벌어지므로, 사각형을
+/// 위로 한 칸 올려 top..bottom 이 실제 캐럿 줄을 덮도록 보정한다.
+fn hwp_caret_anchor(anchor: CaretAnchor) -> CaretAnchor {
+    let height = anchor.bottom.saturating_sub(anchor.top).max(1);
+    CaretAnchor {
+        x: anchor.x,
+        top: anchor.top.saturating_sub(height),
+        bottom: anchor.top,
+    }
+}
 
 unsafe fn accessible_system_caret_anchor(window: HWND) -> Option<CaretAnchor> {
     let accessible = accessible_system_caret_object(window)?;
@@ -4442,5 +4454,17 @@ mod taskbar_indicator_tests {
     fn tray_indicator_labels_still_resolve() {
         assert_eq!(taskbar_input_mode_from_label("SystemTray.NormalButton", "한국어 입력 모드"), Some(true));
         assert_eq!(taskbar_input_mode_from_label("SystemTray.NormalButton", "영어 입력 모드"), Some(false));
+    }
+}
+
+#[cfg(test)]
+mod hwp_anchor_tests {
+    use super::{hwp_caret_anchor, CaretAnchor};
+
+    #[test]
+    fn hwp_anchor_is_shifted_up_so_it_covers_the_caret_line() {
+        // 실측: 보고된 사각형 (top 735, bottom 755), 실제 캐럿 막대는 706..734
+        let fixed = hwp_caret_anchor(CaretAnchor { x: 2330, top: 735, bottom: 755 });
+        assert_eq!((fixed.x, fixed.top, fixed.bottom), (2330, 715, 735));
     }
 }
