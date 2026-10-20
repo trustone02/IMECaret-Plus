@@ -1,6 +1,7 @@
 use crate::ime::{ImeSnapshot, Validity};
 use crate::win::*;
 use std::mem::zeroed;
+use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -80,26 +81,7 @@ pub fn is_hwp_window(window: HWND) -> bool {
 }
 
 /// 아래한글 활성 시 하이브리드 IME 스냅샷 조회 함수
-pub fn query_hwp_ime_snapshot(main_window: HWND) -> ImeSnapshot {
-    // OS 레벨의 IME 상태(ImmGetDefaultIMEWnd / ImmGetContext)를 조회하여
-    // 유효한 상태가 있으면 HWP_IS_HANGUL을 실시간 동기화
-    if !main_window.is_null() {
-        unsafe {
-            let def_ime = ImmGetDefaultIMEWnd(main_window);
-            let target = if !def_ime.is_null() { def_ime } else { main_window };
-            let imc = ImmGetContext(target);
-            if !imc.is_null() {
-                let mut conv = 0u32;
-                let mut sent = 0u32;
-                if ImmGetConversionStatus(imc, &mut conv, &mut sent) != FALSE {
-                    let is_hangul = (conv & IME_CMODE_HANGUL) != 0;
-                    HWP_IS_HANGUL.store(is_hangul, Ordering::Relaxed);
-                }
-                ImmReleaseContext(target, imc);
-            }
-        }
-    }
-
+pub fn query_hwp_ime_snapshot(_main_window: HWND) -> ImeSnapshot {
     let is_hangul = HWP_IS_HANGUL.load(Ordering::Relaxed);
 
     ImeSnapshot {
@@ -112,13 +94,39 @@ pub fn query_hwp_ime_snapshot(main_window: HWND) -> ImeSnapshot {
 
 /// 아래한글 프로세스의 UI 스레드에 입력 큐를 임시 연결(AttachThreadInput)하여
 /// 실제 Win32 시스템 캐럿 좌표 탐색 시도
+unsafe extern "system" fn find_hwp_edit_wnd_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let mut class_buf = [0u16; 64];
+    let len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), class_buf.len() as i32);
+    if len > 0 {
+        let class = String::from_utf16_lossy(&class_buf[..len as usize]);
+        if class.eq_ignore_ascii_case("HwpMainEditWnd") {
+            *(lparam as *mut HWND) = hwnd;
+            return FALSE;
+        }
+    }
+    TRUE
+}
+
+pub unsafe fn find_hwp_main_edit_window(parent: HWND) -> Option<HWND> {
+    let mut found: HWND = null_mut();
+    EnumChildWindows(parent, Some(find_hwp_edit_wnd_callback), &mut found as *mut HWND as LPARAM);
+    if !found.is_null() {
+        Some(found)
+    } else {
+        None
+    }
+}
+
 pub unsafe fn find_hwp_win32_caret(window: HWND) -> Option<crate::editability::CaretAnchor> {
     if window.is_null() {
         return None;
     }
 
+    // 아래한글 최상위 창(HwndWrapper) 대신 실제 문서 에디터 창인 HwpMainEditWnd 탐색
+    let edit_window = find_hwp_main_edit_window(window).unwrap_or(window);
+
     let mut process_id = 0u32;
-    let target_tid = GetWindowThreadProcessId(window, &mut process_id);
+    let target_tid = GetWindowThreadProcessId(edit_window, &mut process_id);
     if target_tid == 0 {
         return None;
     }
@@ -136,7 +144,7 @@ pub unsafe fn find_hwp_win32_caret(window: HWND) -> Option<crate::editability::C
     let target_focus = if !focus_hwnd.is_null() {
         focus_hwnd
     } else {
-        window
+        edit_window
     };
 
     let mut pt: POINT = zeroed();
