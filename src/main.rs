@@ -1,4 +1,4 @@
-#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+﻿#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod config;
 
@@ -1085,6 +1085,11 @@ mod windows_app {
         }
 
         unsafe fn active_shell_overlay_bounds(&mut self, foreground: HWND) -> Option<RECT> {
+            if window_class_equals(foreground, "Shell_TrayWnd")
+                || window_class_equals(foreground, "Shell_SecondaryTrayWnd")
+            {
+                return None;
+            }
             if foreground != self.shell_overlay_hwnd {
                 self.shell_overlay_hwnd = foreground;
                 self.shell_overlay_active =

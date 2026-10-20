@@ -1,4 +1,4 @@
-use crate::win::*;
+﻿use crate::win::*;
 use crate::outlook::{self, OutlookEditorState};
 use std::ffi::c_void;
 use std::mem::{size_of, transmute, zeroed};
@@ -233,7 +233,6 @@ struct ForegroundWindowProfile {
     emeditor: bool,
     // 아래한글(hwp.exe)은 자체 입력 엔진을 사용해 표준 IME 상태 조회가 불가능하고
     // 한영 상태도 일치하지 않으므로, 헷갈리지 않도록 배지를 아예 띄우지 않는다.
-    #[allow(dead_code)]
     hwp: bool,
 }
 
@@ -685,6 +684,34 @@ impl EditabilityDetector {
         }
 
         let foreground_profile = self.foreground_window_profile(targets.foreground);
+        // 아래한글(hwp.exe)은 자체 입력 엔진을 사용하여 표준 IME 상태 조회가 불가능하고
+        // 헷갈림을 방지하기 위해 배지를 아예 표시하지 않는다.
+        // 아래한글(HWP) 하이브리드 캐럿 앵커링
+        if foreground_profile.hwp {
+            for window in [targets.focus, targets.caret, targets.active, targets.foreground] {
+                if let Some(anchor) = accessible_system_caret_anchor(window) {
+                    return Some(anchor);
+                }
+            }
+            if let Some(anchor) = win32_caret_anchor(targets) {
+                return Some(anchor);
+            }
+            if let CaretProbeResult::Found(anchor) = self.uia_focused_caret_anchor(targets, false, false, false) {
+                return Some(anchor);
+            }
+            let probe_window = if !targets.focus.is_null() { targets.focus } else { targets.foreground };
+            if !probe_window.is_null() {
+                let mut rect: RECT = zeroed();
+                if GetWindowRect(probe_window, &mut rect) != 0 {
+                    return Some(CaretAnchor {
+                        x: rect.left + 80,
+                        top: rect.top + 160,
+                        bottom: rect.top + 180,
+                    });
+                }
+            }
+        }
+
         let console_like = foreground_profile.console_like;
         let classic_console = foreground_profile.classic_console;
         let uia_preferred = foreground_profile.uia_preferred;
@@ -2649,6 +2676,9 @@ unsafe fn classify_standard_window(window: HWND) -> Option<Editability> {
     // Edit/RichEdit/Scintilla, and its UI Automation tree carries no editable
     // evidence, so without this the indicator was never shown there.
     if normalized.starts_with("eeview") {
+    if normalized.starts_with("hnc") || normalized.contains("hwp") {
+        return Some(Editability::Editable);
+    }
         return Some(Editability::Editable);
     }
 

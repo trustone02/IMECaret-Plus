@@ -1,4 +1,4 @@
-#![allow(
+﻿#![allow(
     non_camel_case_types,
     non_snake_case,
     non_upper_case_globals,
@@ -25,6 +25,8 @@ pub type HMODULE = *mut c_void;
 pub type HMONITOR = *mut c_void;
 pub type HWND = *mut c_void;
 pub type HWINEVENTHOOK = *mut c_void;
+pub type HHOOK = *mut c_void;
+pub type HOOKPROC = Option<unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>;
 pub type HMENU = *mut c_void;
 pub type HICON = *mut c_void;
 pub type HCURSOR = *mut c_void;
@@ -42,6 +44,27 @@ pub type SAFEARRAY = c_void;
 
 pub const FALSE: BOOL = 0;
 pub const TRUE: BOOL = 1;
+pub const WH_KEYBOARD_LL: i32 = 13;
+pub const WM_KEYDOWN: UINT = 0x0100;
+pub const WM_KEYUP: UINT = 0x0101;
+pub const WM_SYSKEYDOWN: UINT = 0x0104;
+pub const WM_SYSKEYUP: UINT = 0x0105;
+pub const VK_HANGUL: i32 = 0x15;
+pub const VK_RMENU: i32 = 0xA5;
+pub const SB_GETPARTS: UINT = 0x0406;
+pub const SB_GETTEXTW: UINT = 0x040D;
+pub const SB_GETTEXTLENGTHW: UINT = 0x040C;
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct KBDLLHOOKSTRUCT {
+    pub vkCode: DWORD,
+    pub scanCode: DWORD,
+    pub flags: DWORD,
+    pub time: DWORD,
+    pub dwExtraInfo: usize,
+}
+
 pub const DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: DPI_AWARENESS_CONTEXT =
     -4isize as DPI_AWARENESS_CONTEXT;
 
@@ -723,6 +746,14 @@ extern "system" {
         dwFlags: DWORD,
     ) -> HWINEVENTHOOK;
     pub fn UnhookWinEvent(hWinEventHook: HWINEVENTHOOK) -> BOOL;
+    pub fn SetWindowsHookExW(
+        idHook: i32,
+        lpfn: HOOKPROC,
+        hmod: HINSTANCE,
+        dwThreadId: DWORD,
+    ) -> HHOOK;
+    pub fn UnhookWindowsHookEx(hhk: HHOOK) -> BOOL;
+    pub fn CallNextHookEx(hhk: HHOOK, nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     pub fn RegisterRawInputDevices(
         pRawInputDevices: *const RAWINPUTDEVICE,
         uiNumDevices: UINT,
