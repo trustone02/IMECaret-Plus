@@ -1,7 +1,7 @@
-; IME Caret(SSMS용 전자/반자 경고 기능 포함) 설치 프로그램을 만드는 Inno Setup 스크립트.
+; IME Caret 공식 설치 프로그램 스크립트 (Inno Setup)
 #define MyAppName "IME Caret"
 #define MyAppVersion "2.5.1"
-#define MyAppExeName "ime-caret.exe"
+#define MyAppExeName "IMECaret.exe"
 #define MyAppPublisher "shinz"
 
 [Setup]
@@ -12,12 +12,11 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\IMECaret
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-; 관리자 권한 없이 현재 사용자 계정에만 설치한다(트레이에 상주하는 개인용
-; 도구라 UAC 팝업 없이 바로 설치되게 하는 게 더 편하다).
+; 관리자 권한(UAC) 없이 사용자 계정에 안전하고 빠르게 설치
 PrivilegesRequired=lowest
 OutputDir=Output
 OutputBaseFilename=IMECaret-Setup
-Compression=lzma2
+Compression=lzma2/max
 SolidCompression=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
 WizardStyle=modern
@@ -26,21 +25,23 @@ WizardStyle=modern
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
-Name: "startupicon"; Description: "Windows 시작 시 자동 실행"; Flags: checkedonce
-Name: "desktopicon"; Description: "바탕 화면에 바로가기 만들기"; Flags: unchecked
+Name: "startupicon"; Description: "Windows 시작 시 자동으로 실행 (권장)"; GroupDescription: "시작 옵션:"; Flags: checkedonce
+Name: "desktopicon"; Description: "바탕 화면에 바로가기 아이콘 만들기"; GroupDescription: "바로가기 옵션:"; Flags: unchecked
 
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\ime-caret.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\IMECaret.ini"; DestDir: "{app}"; Flags: onlyifdoesntexist
+Source: "..\dist\*.wav"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
-; "Windows 시작 시 자동 실행"에 체크했을 때만 HKCU Run 키에 등록한다.
-; uninsdeletevalue 덕분에 제거 프로그램 실행 시 이 키도 같이 삭제된다.
 [Registry]
+; 사용자가 설치 시 "Windows 시작 시 자동으로 실행"에 체크했을 때만 시작프로그램(Run 키)에 등록
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "IMECaret"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: startupicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "설치 완료 후 IME Caret 실행하기"; Flags: nowait postinstall skipifsilent
