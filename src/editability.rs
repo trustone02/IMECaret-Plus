@@ -1,4 +1,4 @@
-﻿use crate::win::*;
+use crate::win::*;
 use crate::outlook::{self, OutlookEditorState};
 use std::ffi::c_void;
 use std::mem::{size_of, transmute, zeroed};
@@ -700,16 +700,12 @@ impl EditabilityDetector {
                 return Some(anchor);
             }
             let probe_window = if !targets.focus.is_null() { targets.focus } else { targets.foreground };
-            if !probe_window.is_null() {
-                let mut rect: RECT = zeroed();
-                if GetWindowRect(probe_window, &mut rect) != 0 {
-                    return Some(CaretAnchor {
-                        x: rect.left + 80,
-                        top: rect.top + 160,
-                        bottom: rect.top + 180,
-                    });
-                }
+            if let Some(anchor) = crate::hwp::find_hwp_win32_caret(probe_window) {
+                return Some(anchor);
             }
+            // 아래한글 본문 뷰는 자체 렌더링으로 캐럿 좌표를 제공하지 않으므로
+            // 엉뚱한 문서 여백에 가짜 배지가 고정되는 오작동을 방지하기 위해 배지를 숨깁니다.
+            return None;
         }
 
         let console_like = foreground_profile.console_like;

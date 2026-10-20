@@ -1,4 +1,4 @@
-﻿use crate::editability::{FocusedInputContext, FocusedInputHost};
+use crate::editability::{FocusedInputContext, FocusedInputHost};
 use crate::win::*;
 use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
@@ -137,6 +137,17 @@ impl ImeEngine {
                     .is_some_and(|age| age <= CACHE_RETENTION)
             });
             self.last_cache_cleanup = Some(now);
+        }
+
+        let hwp_target = first_non_null(&[
+            focused_host.native_window,
+            foreground.focus,
+            foreground.caret,
+            foreground.active,
+            foreground.foreground,
+        ]);
+        if crate::hwp::is_hwp_window(hwp_target) || crate::hwp::is_hwp_window(foreground.foreground) {
+            return crate::hwp::query_hwp_ime_snapshot(hwp_target);
         }
 
         if let Some(snapshot) =

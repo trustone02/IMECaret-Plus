@@ -1,4 +1,4 @@
-﻿#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod config;
 
@@ -6,6 +6,8 @@ mod config;
 mod assets;
 #[cfg(windows)]
 mod editability;
+#[cfg(windows)]
+mod hwp;
 #[cfg(windows)]
 mod ime;
 #[cfg(windows)]
@@ -2061,6 +2063,12 @@ mod windows_app {
                 // message to DefWindowProc lets Windows release its data.
                 match raw_keyboard_activity(lparam) {
                     RawKeyboardActivity::KeyDown(signal) => {
+                        if signal.virtual_key == 0x15 || signal.virtual_key == 0xa5 {
+                            let fg = GetForegroundWindow();
+                            if crate::hwp::is_hwp_window(fg) {
+                                crate::hwp::toggle_hwp_hangul_state();
+                            }
+                        }
                         state.on_keyboard_activity(Some(signal));
                     }
                     RawKeyboardActivity::Ignore => {}

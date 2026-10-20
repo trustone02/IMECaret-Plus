@@ -1,4 +1,4 @@
-﻿#![allow(
+#![allow(
     non_camel_case_types,
     non_snake_case,
     non_upper_case_globals,
@@ -677,10 +677,15 @@ extern "system" {
         bMaximumWindow: BOOL,
         lpConsoleCurrentFontEx: *mut CONSOLE_FONT_INFOEX,
     ) -> BOOL;
+
+    pub fn GetCurrentThreadId() -> DWORD;
 }
 
 #[link(name = "user32")]
 extern "system" {
+    pub fn AttachThreadInput(idAttach: DWORD, idAttachTo: DWORD, fAttach: BOOL) -> BOOL;
+    pub fn GetFocus() -> HWND;
+    pub fn GetCaretPos(lpPoint: *mut POINT) -> BOOL;
     pub fn RegisterClassW(lpWndClass: *const WNDCLASSW) -> ATOM;
     pub fn CreateWindowExW(
         dwExStyle: DWORD,
