@@ -43,5 +43,91 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 ; 사용자가 설치 시 "Windows 시작 시 자동으로 실행"에 체크했을 때만 시작프로그램(Run 키)에 등록
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "IMECaret"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: startupicon
 
+[UninstallDelete]
+Type: files; Name: "{app}\*.ini"
+Type: files; Name: "{app}\*.log"
+Type: files; Name: "{app}\*.wav"
+Type: files; Name: "{app}\*.exe"
+Type: filesandordirs; Name: "{app}"
+Type: filesandordirs; Name: "{group}"
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "설치 완료 후 IME Caret 실행하기"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// 설치 시작 시 기존 실행 중인 프로세스 안전 종료
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  Exec('taskkill.exe', '/F /IM IMECaret.exe /IM ime-caret.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(200);
+end;
+
+// 언인스톨 시작 시 실행 중인 프로세스 안전 종료 (파일 Lock 해제)
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  Exec('taskkill.exe', '/F /IM IMECaret.exe /IM ime-caret.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(200);
+end;
+
+// Windows 11 작업표시줄 설정(NotifyIconSettings)에 영구 보존되는 유령 트레이 아이콘 캐시 완전 청소
+procedure CleanNotifyIconSettings();
+var
+  Subkeys: TArrayOfString;
+  I: Integer;
+  ExePath: String;
+  TargetAppDir: String;
+begin
+  TargetAppDir := Uppercase(ExpandConstant('{app}'));
+  if RegGetSubkeyNames(HKCU, 'Control Panel\NotifyIconSettings', Subkeys) then
+  begin
+    for I := 0 to GetArrayLength(Subkeys) - 1 do
+    begin
+      if RegQueryStringValue(HKCU, 'Control Panel\NotifyIconSettings\' + Subkeys[I], 'ExecutablePath', ExePath) then
+      begin
+        ExePath := Uppercase(ExePath);
+        if (Pos('IMECARET.EXE', ExePath) > 0) or 
+           (Pos('IME-CARET.EXE', ExePath) > 0) or 
+           (Pos(TargetAppDir, ExePath) > 0) then
+        begin
+          RegDeleteKeyIncludingSubkeys(HKCU, 'Control Panel\NotifyIconSettings\' + Subkeys[I]);
+        end;
+      end;
+    end;
+  end;
+end;
+
+// 언인스톨 완료 후 남아있는 파일 및 폴더 강제 삭제
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  AppDir: String;
+  GroupDir: String;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    // 1. 작업표시줄 설정 알림 아이콘 캐시 청소
+    CleanNotifyIconSettings();
+
+    // 2. 시작 프로그램 레지스트리 잔여 키 완전 삭제
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'IMECaret');
+
+    // 3. 앱 설치 폴더 및 찌꺼기 완벽 삭제
+    AppDir := ExpandConstant('{app}');
+    if DirExists(AppDir) then
+    begin
+      DelTree(AppDir, True, True, True);
+    end;
+
+    // 4. 시작메뉴 바로가기 폴더 완벽 삭제
+    GroupDir := ExpandConstant('{group}');
+    if DirExists(GroupDir) then
+    begin
+      DelTree(GroupDir, True, True, True);
+    end;
+  end;
+end;
