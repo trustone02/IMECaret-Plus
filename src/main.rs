@@ -1051,7 +1051,10 @@ mod windows_app {
             // dialog, refresh the badge's topmost order even when the caret
             // geometry is unchanged; otherwise the badge can remain hidden
             // until typing or moving the dialog changes its position.
-            if self.active_caret_reassert_topmost || is_excel_find_replace_foreground() {
+            if self.active_caret_reassert_topmost
+                || self.shell_overlay_active
+                || is_excel_find_replace_foreground()
+            {
                 SetWindowPos(
                     self.badge_hwnd,
                     HWND_TOPMOST,
@@ -1105,7 +1108,11 @@ mod windows_app {
                 return None;
             }
 
-            visible_window_bounds(foreground)
+            // 모던 셸 오버레이(SearchHost, StartMenu 등) 창 내부에서 사용자가 직접
+            // 텍스트를 입력할 때는 해당 창을 가림막(Occluder)으로 취급하지 않는다.
+            // 창 밖으로 배지를 밀어내면 작업표시줄 위쪽 툴팁/말풍선 뒤로 숨겨지는 버그가 발생하므로,
+            // None을 반환하여 텍스트 커서 바로 옆에 자연스럽게 표시되도록 한다.
+            None
         }
 
         unsafe fn focused_input_host_for_shell(
@@ -3014,6 +3021,7 @@ mod windows_app {
             && left.bottom > right.top
     }
 
+    #[allow(dead_code)]
     unsafe fn visible_window_bounds(window: HWND) -> Option<RECT> {
         let mut rect = RECT::default();
         if DwmGetWindowAttribute(
