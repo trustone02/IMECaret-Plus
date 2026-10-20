@@ -43,12 +43,12 @@ mod windows_app {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
     use std::time::{Duration, Instant};
 
-    const APP_NAME: &str = "IME Caret";
-    const APP_VERSION: &str = "2.5";
-    const MAIN_CLASS: &str = "ImeCaret.MainWindow";
-    const BADGE_CLASS: &str = "ImeCaret.BadgeWindow";
-    const SETTINGS_CLASS: &str = "ImeCaret.SettingsWindow";
-    const MUTEX_NAME: &str = "Local\\ImeCaret.Singleton.7740C7D2-5D89-4874-A4D5-1B344507A604";
+    const APP_NAME: &str = "IMECaret Plus";
+    const APP_VERSION: &str = "2.5.1";
+    const MAIN_CLASS: &str = "IMECaretPlus.MainWindow";
+    const BADGE_CLASS: &str = "IMECaretPlus.BadgeWindow";
+    const SETTINGS_CLASS: &str = "IMECaretPlus.SettingsWindow";
+    const MUTEX_NAME: &str = "Local\\IMECaretPlus.Singleton.7740C7D2-5D89-4874-A4D5-1B344507A604";
 
     const TIMER_ID: usize = 1;
     const TRAY_HINT_TIMER_ID: usize = 2;
@@ -1974,12 +1974,19 @@ mod windows_app {
             }
 
             let exe_path =
-                std::env::current_exe().unwrap_or_else(|_| PathBuf::from("IME Caret.exe"));
+                std::env::current_exe().unwrap_or_else(|_| PathBuf::from("IMECaretPlus.exe"));
             let exe_dir = exe_path
                 .parent()
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| PathBuf::from("."));
-            let config_path = exe_dir.join("IMECaret.ini");
+            let config_path = {
+                let p = exe_dir.join("IMECaretPlus.ini");
+                if !p.exists() && exe_dir.join("IMECaret.ini").exists() {
+                    exe_dir.join("IMECaret.ini")
+                } else {
+                    p
+                }
+            };
             let config = Config::load(&config_path);
             let mut icons = IconSet::create();
 
@@ -2003,7 +2010,7 @@ mod windows_app {
             let state_ptr = Box::into_raw(state);
 
             let class = wide(MAIN_CLASS);
-            let title = wide("IME Caret Hidden Window");
+            let title = wide("IMECaret Plus Hidden Window");
             let hwnd = CreateWindowExW(
                 0,
                 class.as_ptr(),
@@ -2305,7 +2312,7 @@ mod windows_app {
 
     unsafe fn create_badge_window(state: &mut AppState) -> HWND {
         let class = wide(BADGE_CLASS);
-        let title = wide("IME Caret Badge");
+        let title = wide("IMECaret Plus Badge");
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED,
             class.as_ptr(),
@@ -3581,7 +3588,7 @@ mod windows_app {
 
     unsafe fn show_fatal_error(message: &str) {
         let text = wide(message);
-        let title = wide("IME Caret 오류");
+        let title = wide(&format!("{APP_NAME} 오류"));
         MessageBoxW(
             null_mut(),
             text.as_ptr(),
@@ -3832,7 +3839,7 @@ mod windows_app {
 
         #[test]
         fn tray_tooltip_contains_program_name_and_version() {
-            assert_eq!(tray_tooltip_text(), "IME Caret 2.5");
+            assert_eq!(tray_tooltip_text(), "IMECaret Plus 2.5.1");
         }
 
         #[test]

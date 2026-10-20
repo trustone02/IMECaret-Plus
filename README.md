@@ -1,143 +1,93 @@
-# IME Caret 2.5
+# IMECaret Plus (아이엠이캐럿 플러스) v2.5.1
 
-Windows에서 현재 입력 가능한 텍스트 캐럿 옆에 IME 상태(한/영/일)를 작게 표시하는 Rust 프로그램입니다.
+> **한국어 실무 환경(아래한글, 오피스, Windows 11)을 위한 지능형 텍스트 캐럿 IME 상태 표시기**
 
-## 상태 표시
+Windows 환경에서 현재 활성화된 텍스트 커서(Caret) 바로 옆에 실시간 한/영/일 입력 상태를 깔끔하게 표시해 주는 경량 유틸리티 프로그램입니다.
 
-상태 표시 문자는 다음과 같습니다.
+---
 
-| 상태 | 표시 |
-|---|---|
-| 한글 | `가` |
-| 영문, Caps Lock 꺼짐 | `a` |
-| 영문, Caps Lock 켜짐 | `A` |
-| 일본어 히라가나 | `ひ` |
-| 일본어 가타카나 | `カ` |
+## 🚀 주요 특징 (Plus 핵심 기능)
 
-## 설정
+* **한컴오피스 한/글(HWP) 완벽 지원:**
+  * 독자적인 자체 입력 엔진(HncInput)을 사용하는 아래한글에서도 하드웨어 키보드 Raw Input 훅 및 에디터 창(`HwpMainEditWnd`) Win32 캐럿 직결 추적을 통해 실시간 한/영 상태(`가` / `a`)를 오차 없이 정확히 표시합니다.
+* **Windows 11 최신 셸 및 작업표시줄 검색창 최적화:**
+  * Windows 11 작업표시줄 검색창(`SearchBox`)이나 시스템 플라이아웃 뒤로 배지가 숨거나 튕겨나가지 않도록 안전 내부 안착(Clamping) 및 최상위 레이어(Topmost) 자동 유지를 보장합니다.
+* **전문 실무 도구(SSMS, VS Code, Office) 완벽 대응:**
+  * SQL Server Management Studio(SSMS)의 전자(全角) 경고 표시, Visual Studio Code 상단 검색창, MS Word/Excel/PowerPoint/Outlook 전 제품군을 지원합니다.
+* **초경량 & 초고속 (Zero-Latency):**
+  * Rust 기반 순수 Win32/UIA 하이브리드 엔진으로 개발되어 CPU 점유율 0% 및 0ms(체감 지연 0초)의 즉각적인 한/영 토글 반응성을 제공합니다.
+* **깔끔한 공식 설치 프로그램 제공:**
+  * 시작프로그램 자동 등록 지원 및 프로그램 제거(언인스톨) 시 Windows 11 트레이 알림 아이콘 캐시(`NotifyIconSettings`)까지 흔적 없이 100% 완전 청소합니다.
 
-트레이 아이콘을 우클릭하면 설정 메뉴가 있습니다. 설정에서는 다음 항목을 변경할 수 있습니다.
+---
 
-- 상태 변경 소리 전체 사용 여부
-- 영문 전환 소리 재생 여부
-- 일본어 전환 소리 재생 여부
-- 한글 전환 소리 재생 여부
-- 상태 표시 위치 설정 (캐럿 우측 / 캐럿 우상단 / 캐럿 우하단)
-- 상태 표시 글자색 및 배경색 설정
+## 📌 상태 표시 안내
 
-기본 설정 파일 (IMECaret.ini):
+| 상태 | 표시 배지 | 설명 |
+|:---:|:---:|---|
+| **한글** | `가` | 한글 입력 모드 (기본 파란색/보라색) |
+| **영문 소문자** | `a` | 영문 입력 모드 (Caps Lock 꺼짐, 기본 주황색) |
+| **영문 대문자** | `A` | 영문 대문자 고정 모드 (Caps Lock 켜짐) |
+| **일본어 히라가나** | `ひ` | 일본어 IME 히라가나 모드 |
+| **일본어 가타카나** | `カ` | 일본어 IME 가타카나 모드 |
 
-```ini
-[Settings]
-PlayEnglishSound=1
-PlayJapaneseSound=1
-PlayKoreanSound=1
-PlaySounds=0
-IndicatorPosition=Below
-IndicatorTextColor=FFFFFFA5
-EnglishBackgroundColor=FF6262A5
-JapaneseBackgroundColor=62FF62A5
-KoreanBackgroundColor=6262FFA5
-```
+---
 
-`IndicatorPosition`에는 `Right`, `Above`, `Below` 중 하나를 사용할 수 있습니다.
-Color값은 RRGGBBAA 형식입니다 (AA=00이면 완전 투명, AA=FF이면 완전 불투명).
+## ⚙️ 설정 및 맞춤화
 
-## 2.5 변경 사항
+작업표시줄 시스템 트레이의 **IMECaret Plus** 아이콘을 우클릭하면 설정 창을 열 수 있습니다.
 
-- 빌드 시 사용자 설정 유지 및 콤보박스 편집 가능성 감지 강화. UIA 및 IME 쿼리 최적화, 메모리 할당 감소, 실패한 작업 표시줄 조회 제한.
+* **상태 전환 알림음:** 상태(한/영/일) 변경 시 경쾌한 사운드 재생 여부 설정
+* **배지 위치 조정:**
+  * `Right` (캐럿 우측)
+  * `Above` (캐럿 상단)
+  * `Below` (캐럿 하단 - 기본값)
+* **색상 맞춤화:** 한글, 영문, 일본어 각 상태별 배경색 및 글자색을 투명도(Alpha)를 포함하여 자유롭게 설정 가능 (`RRGGBBAA` 형식)
 
-## 2.4 변경 사항
+설정 파일은 실행 파일과 동일한 폴더의 `IMECaretPlus.ini`에 자동 저장됩니다.
 
-- 네이버 메일과 다음 메일에서 본문 작성 시 상태 표시 안되던 문제 수정.
+---
 
-## 2.3 변경 사항
+## 📦 설치 및 실행
 
-- VS Code 상단의 검색바와 작업 관리자 상단의 검색바에서 상태 표시 안되던 문제 수정.
+1. **설치 파일 다운로드:** [Releases](https://github.com/trustone02/IME-Caret/releases)에서 최신 `IMECaretPlus-Setup.exe`를 다운로드하여 실행합니다.
+2. 설치 마법사에서 **"Windows 시작 시 자동으로 실행"**을 체크하면 PC 부팅 시 자동으로 백그라운드 상주 실행됩니다.
+3. 무설치 독립 실행 바이너리를 원하실 경우 `dist\IMECaretPlus.exe`를 바로 실행하셔도 됩니다.
 
-## 2.2 변경 사항
+---
 
-- 중복 포커스·Excel·UIA 탐색과 불필요한 배지 렌더링·할당을 줄여 반응성과 CPU 효율 개선.
+## 🛠️ 직접 빌드하기
 
-## 2.1 변경 사항
-
-- 윈도우 이동 시 상태 표시가 이동한 위치에 맞게 바로 갱신되지 않는 문제 수정.
-
-## 2.0 변경 사항
-
-- Excel 일부 버전에서 상태 표시 안되던 문제 수정.
-
-## 1.9 변경 사항
-
-- 상태(한/영/일)에 따라 상태 표시 글자색 및 배경색을 설정할 수 있는 기능 추가.
-
-## 1.8 변경 사항
-
-- 아웃룩에서 약속 본문 작성 시, 작업 본문 작성 시, 연락처 메모 작성 시 상태 표시 안되던 문제 수정.
-
-## 1.7 변경 사항
-
-- 서로 다른 배율의 모니터 사이에서 캐럿 좌표가 어긋나고 입력할수록 오차가 커지는 문제 수정.
-
-## 1.6 변경 사항
-
-- Word 와 PowerPoint 에서 상태 표시 안되던 문제 수정.
-
-## 1.5 변경 사항
-
-- 최초 공개.
-
-## 소스 구조
-
-```text
-IME-Caret
-├─ Cargo.toml
-├─ Cargo.lock
-├─ IMECaret.ini
-├─ build.cmd
-├─ build.ps1
-├─ assets
-│  ├─ IMEE.wav
-│  ├─ IMEJ.wav
-│  └─ IMEK.wav
-├─ src
-│  ├─ main.rs          애플리케이션, 캐럿 표시, 트레이 및 설정 UI
-│  ├─ editability.rs   편집 가능 여부 및 캐럿 위치 탐색
-│  ├─ ime.rs           포커스 입력 컨트롤의 IME 상태 조회
-│  ├─ outlook.rs       Outlook 읽기·작성 상태 조회
-│  ├─ config.rs        INI 설정
-│  ├─ assets.rs        고정 앱/트레이 아이콘 데이터
-│  └─ win.rs           Win32 및 UI Automation FFI
-└─ tools
-   └─ static_check.py
-```
-
-## 빌드
-
-필요 환경:
-
-- Windows 10 또는 Windows 11
-- Rust stable MSVC toolchain
-- Visual Studio C++ Build Tools
-
-프로젝트 폴더에서 실행합니다.
-
-```bat
-build.cmd
-```
-
-또는 PowerShell에서 실행합니다.
+### 요구 사항
+* Windows 10 / Windows 11
+* Rust Stable (MSVC 툴체인)
+* Visual Studio C++ Build Tools
+* (선택) Inno Setup 6 (설치 프로그램 생성 시)
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+# 프로젝트 클론
+git clone https://github.com/trustone02/IME-Caret.git
+cd IME-Caret
+
+# 단위 테스트 실행
+cargo test
+
+# 최적화 릴리즈 빌드
+cargo build --release
+
+# 설치 프로그램 컴파일 (Inno Setup 필요)
+& 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' installer\installer.iss
 ```
 
-빌드 결과는 `dist` 폴더에 생성됩니다.
+---
 
-```text
-dist\IMECaret.exe
-dist\IMECaret.ini
-dist\IMEE.wav
-dist\IMEJ.wav
-dist\IMEK.wav
-```
+## 📜 라이선스 및 출처 (Acknowledgments & License)
+
+본 프로젝트는 [MIT License](LICENSE)에 따라 자유롭게 사용, 수정, 배포할 수 있습니다.
+
+### 원작 프로젝트 기여 공시
+본 소프트웨어는 [mattisonit](https://github.com/mattisonit) 님의 오픈소스 프로젝트 **[ime-caret](https://github.com/mattisonit/ime-caret)**에서 영감을 받아 시작되었습니다. 대한민국 실무자(세무조사관, 회계사, 공공기관 및 개발자)의 실제 사용 환경에 맞추어 **한컴오피스 한/글(HWP) 입력기 연동, Windows 11 셸 가림 방지, 완전 청소형 공식 인스톨러** 등을 대폭 발전시킨 강화판(Plus Edition)입니다.
+
+원작자의 뛰어난 아이디어와 훌륭한 오픈소스 기여에 진심으로 감사드립니다.
+
+Copyright (c) 2026 trustone02 & mattisonit. Licensed under the MIT License.

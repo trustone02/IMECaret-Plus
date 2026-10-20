@@ -1,7 +1,7 @@
-; IME Caret 공식 설치 프로그램 스크립트 (Inno Setup)
-#define MyAppName "IME Caret"
+; IMECaret Plus 공식 설치 프로그램 스크립트 (Inno Setup)
+#define MyAppName "IMECaret Plus"
 #define MyAppVersion "2.5.1"
-#define MyAppExeName "IMECaret.exe"
+#define MyAppExeName "IMECaretPlus.exe"
 #define MyAppPublisher "shinz"
 
 [Setup]
@@ -9,13 +9,13 @@ AppId={{B5A1E6C2-9B1A-4B3B-8E8B-7B1D7C9C9A11}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\Programs\IMECaret
+DefaultDirName={localappdata}\Programs\IMECaretPlus
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; 관리자 권한(UAC) 없이 사용자 계정에 안전하고 빠르게 설치
 PrivilegesRequired=lowest
 OutputDir=Output
-OutputBaseFilename=IMECaret-Setup
+OutputBaseFilename=IMECaretPlus-Setup
 Compression=lzma2/max
 SolidCompression=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -30,7 +30,9 @@ Name: "desktopicon"; Description: "바탕 화면에 바로가기 아이콘 만�
 
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\IMECaret.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\ime-caret.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\IMECaretPlus.ini"; DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "..\dist\IMECaret.ini"; DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "..\dist\*.wav"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
@@ -41,7 +43,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Registry]
 ; 사용자가 설치 시 "Windows 시작 시 자동으로 실행"에 체크했을 때만 시작프로그램(Run 키)에 등록
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "IMECaret"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: startupicon
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "IMECaretPlus"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; Tasks: startupicon
 
 [UninstallDelete]
 Type: files; Name: "{app}\*.ini"
@@ -52,7 +54,7 @@ Type: filesandordirs; Name: "{app}"
 Type: filesandordirs; Name: "{group}"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "설치 완료 후 IME Caret 실행하기"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "설치 완료 후 IMECaret Plus 실행하기"; Flags: nowait postinstall skipifsilent
 
 [Code]
 // 설치 시작 시 기존 실행 중인 프로세스 안전 종료
@@ -61,7 +63,7 @@ var
   ResultCode: Integer;
 begin
   Result := True;
-  Exec('taskkill.exe', '/F /IM IMECaret.exe /IM ime-caret.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM IMECaretPlus.exe /IM IMECaret.exe /IM ime-caret.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(200);
 end;
 
@@ -71,7 +73,7 @@ var
   ResultCode: Integer;
 begin
   Result := True;
-  Exec('taskkill.exe', '/F /IM IMECaret.exe /IM ime-caret.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM IMECaretPlus.exe /IM IMECaret.exe /IM ime-caret.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(200);
 end;
 
@@ -91,7 +93,8 @@ begin
       if RegQueryStringValue(HKCU, 'Control Panel\NotifyIconSettings\' + Subkeys[I], 'ExecutablePath', ExePath) then
       begin
         ExePath := Uppercase(ExePath);
-        if (Pos('IMECARET.EXE', ExePath) > 0) or 
+        if (Pos('IMECARETPLUS.EXE', ExePath) > 0) or 
+           (Pos('IMECARET.EXE', ExePath) > 0) or 
            (Pos('IME-CARET.EXE', ExePath) > 0) or 
            (Pos(TargetAppDir, ExePath) > 0) then
         begin
@@ -114,6 +117,7 @@ begin
     CleanNotifyIconSettings();
 
     // 2. 시작 프로그램 레지스트리 잔여 키 완전 삭제
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'IMECaretPlus');
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'IMECaret');
 
     // 3. 앱 설치 폴더 및 찌꺼기 완벽 삭제

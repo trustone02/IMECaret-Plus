@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "ime-caret"
-version = "2.5.0"
+name = "imecaret-plus"
+version = "2.5.1"

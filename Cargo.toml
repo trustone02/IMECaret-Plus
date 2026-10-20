@@ -1,11 +1,15 @@
 [package]
-name = "ime-caret"
-version = "2.5.0"
+name = "imecaret-plus"
+version = "2.5.1"
 edition = "2021"
 rust-version = "1.70"
-authors = ["OpenAI"]
-description = "Subtle Windows IME state indicator attached to the active editable text caret"
+authors = ["trustone02", "mattisonit"]
+description = "IMECaret Plus - Enhanced Windows IME state indicator for Korean users (HWP, Windows 11, SSMS)"
 license = "MIT"
+
+[[bin]]
+name = "IMECaretPlus"
+path = "src/main.rs"
 
 [dependencies]
 
