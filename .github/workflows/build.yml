@@ -1,0 +1,36 @@
+name: build
+
+# v* 태그를 푸시하면 소스에서 자동 빌드한다. (SignPath 서명 심사 요건: 저장소의 자동 빌드 결과물만 서명)
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Build, test and package
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Make portable zip
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          New-Item -ItemType Directory -Force dist\out | Out-Null
+          Copy-Item installer\Output\IMECaretPlus-Setup.exe dist\out\
+          Copy-Item dist\IMECaretPlus.exe dist\out\
+          Compress-Archive -Path dist\IMECaretPlus.exe, dist\IMECaretPlus.ini, dist\*.wav -DestinationPath "dist\out\IMECaretPlus-v$v-Portable.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IMECaretPlus-build
+          path: dist/out/*
