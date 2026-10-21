@@ -77,6 +77,22 @@ Windows에서 텍스트 커서 바로 옆에 실시간 **한/영 입력 상태**
 
 ---
 
+## 🔏 코드 서명 정책 (Code signing policy)
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). *(서명 심사 승인 후 적용되며, 그 전 배포본은 서명되어 있지 않습니다.)*
+
+* **역할 (Team roles):** 작성자·검토자·승인자: [trustone02](https://github.com/trustone02) (1인 유지보수)
+* **서명 대상:** 이 저장소의 소스에서 GitHub Actions로 자동 빌드한 `IMECaretPlus.exe` 및 `IMECaretPlus-Setup.exe`
+
+### 개인정보 및 보안 (Privacy policy)
+
+* 이 프로그램은 **한/영 키 상태와 입력창 위치를 화면 표시용으로만** 사용합니다. 입력한 글자 내용은 **저장하지도, 외부로 전송하지도 않습니다.**
+* 전역 키 감시(Raw Input)는 한/영 키와 아래한글의 한/영 상태 추정에만 쓰입니다. 로그(`%LOCALAPPDATA%\IMECaretPlus\imecaret.log`)에는 키 종류(한/영 등)와 상태 변화만 기록되며 글자 내용은 없습니다.
+* 네트워크 통신을 하지 않으며, 어떤 데이터도 외부로 보내지 않습니다.
+* 시스템 변경: 설치 시 선택한 경우에만 시작 프로그램(Run 키, 시작 폴더 바로가기)에 등록하고, 제거하면 모두 삭제됩니다.
+
+---
+
 ## 📜 출처 및 오픈소스 안내 (Credits & License)
 
 본 프로그램은 [MIT License](LICENSE)를 따르는 오픈소스 소프트웨어입니다.

@@ -1,14 +1,22 @@
 ; IMECaret Plus 공식 설치 프로그램 스크립트 (Inno Setup)
 #define MyAppName "IMECaret Plus"
-#define MyAppVersion "1.1.2"
+#define MyAppVersion "1.1.3"
+#define MyAppURL "https://github.com/trustone02/IMECaret-Plus"
 #define MyAppExeName "IMECaretPlus.exe"
-#define MyAppPublisher "shinz"
+#define MyAppPublisher "trustone02"
 
 [Setup]
 AppId={{B5A1E6C2-9B1A-4B3B-8E8B-7B1D7C9C9A11}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}/issues
+VersionInfoVersion={#MyAppVersion}
+VersionInfoProductName={#MyAppName}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} Setup
+VersionInfoCopyright=Copyright (c) 2026 trustone02 & mattisonit (MIT License)
 DefaultDirName={localappdata}\Programs\IMECaretPlus
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
