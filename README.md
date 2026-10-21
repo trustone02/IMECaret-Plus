@@ -77,12 +77,11 @@ Windows에서 텍스트 커서 바로 옆에 실시간 **한/영 입력 상태**
 
 ---
 
-## 🔏 코드 서명 정책 (Code signing policy)
+## 🔏 코드 서명 및 개인정보 안내
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). *(서명 심사 승인 후 적용되며, 그 전 배포본은 서명되어 있지 않습니다.)*
-
-* **역할 (Team roles):** 작성자·검토자·승인자: [trustone02](https://github.com/trustone02) (1인 유지보수)
-* **서명 대상:** 이 저장소의 소스에서 GitHub Actions로 자동 빌드한 `IMECaretPlus.exe` 및 `IMECaretPlus-Setup.exe`
+* **코드 서명:** 현재 배포 파일(`IMECaretPlus.exe`, `IMECaretPlus-Setup.exe`)에는 **코드 서명이 적용되어 있지 않습니다.** 그래서 일부 PC의 백신이 오탐할 수 있습니다(위 안내 참고).
+* **빌드:** 릴리스 파일은 이 저장소의 소스에서 GitHub Actions로 빌드할 수 있으며, 각 릴리스 노트에 SHA256 해시를 적어 둡니다.
+* **유지보수:** [trustone02](https://github.com/trustone02) (1인 유지보수)
 
 ### 개인정보 및 보안 (Privacy policy)
 
