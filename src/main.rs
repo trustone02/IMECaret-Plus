@@ -250,6 +250,7 @@ mod windows_app {
         cleaning_up: bool,
         shell_overlay_hwnd: HWND,
         shell_overlay_active: bool,
+        shell_overlay_is_search: bool,
         shell_focused_host: FocusedInputHost,
         shell_focused_host_tick: Option<Instant>,
         win_event_hooks: [HWINEVENTHOOK; WIN_EVENT_HOOK_COUNT],
@@ -319,6 +320,7 @@ mod windows_app {
                 cleaning_up: false,
                 shell_overlay_hwnd: null_mut(),
                 shell_overlay_active: false,
+                shell_overlay_is_search: false,
                 shell_focused_host: FocusedInputHost::default(),
                 shell_focused_host_tick: None,
                 win_event_hooks: [null_mut(); WIN_EVENT_HOOK_COUNT],
@@ -569,6 +571,7 @@ mod windows_app {
                 .editability_detector
                 .focused_input_with_context(input_context);
             if !editability.accepts_text_input() {
+                self.diag_shell_hide(1, input_context, &format!("{:?}", editability));
                 self.clear_active_caret();
                 self.hide_badge();
                 return;
@@ -621,6 +624,11 @@ mod windows_app {
                 .editability_detector
                 .focused_caret_anchor_with_context(input_context, console_cell_span)
             else {
+                self.diag_shell_hide(
+                    2,
+                    input_context,
+                    &format!("ime={:?} host_pid={}", snapshot.validity, focused_host.process_id),
+                );
                 self.clear_active_caret();
                 self.hide_badge();
                 return;
@@ -633,6 +641,18 @@ mod windows_app {
             self.active_shell_overlay = shell_overlay;
             self.active_focused_host = focused_host;
             self.show_ime(snapshot, anchor, shell_overlay);
+            if self.shell_overlay_active {
+                self.diag_shell_hide(
+                    3,
+                    input_context,
+                    &format!(
+                        "SHOWN ime={:?} anchor=({},{},{}) host_pid={} visible={} overlay={:?}",
+                        snapshot.validity, anchor.x, anchor.top, anchor.bottom, focused_host.process_id,
+                        self.badge_visible,
+                        shell_overlay.map(|r| (r.left, r.top, r.right, r.bottom))
+                    ),
+                );
+            }
             if self.badge_visible && !self.active_caret_reassert_topmost {
                 self.focus_activation_retries_remaining = 0;
             }
@@ -789,13 +809,11 @@ mod windows_app {
             }
             if active {
                 self.editability_detector.reset_taskbar_input_retry();
-                if self.refresh_task_manager_ime_from_system_indicator() {
-                    if let Some(open) = self.task_manager_korean_open {
-                        if hwp_active {
-                            crate::hwp::force_set_hwp_hangul_state(open);
-                        }
-                    }
-                }
+                // 아래한글 상태는 자체 엔진 내부 값이라 시스템 한/영 표시와 무관하다(실측).
+                // 진입 직후의 시스템 표시는 직전 창(검색창 등)의 상태이므로 아래한글 플래그를
+                // 덮어쓰지 않는다. 상태는 프로세스별 저장값(adopt_hwp_process)과 한/영 키로만 관리한다.
+                // 여기서는 작업 관리자 검색용 캐시만 갱신한다.
+                self.refresh_task_manager_ime_from_system_indicator();
                 SetTimer(
                     self.main_hwnd,
                     TASK_MANAGER_IME_STATE_TIMER_ID,
@@ -1073,12 +1091,22 @@ mod windows_app {
 
             // 작업표시줄 영역 내에 위치할 경우 배지가 작업표시줄 상단 밖(위쪽)으로
             // 튕겨 올라가 "검색" 말풍선 툴팁 뒤로 숨지 못하도록 수직 좌표를 작업표시줄 내부로 강제 고정합니다.
-            if is_shell_or_taskbar {
+            if is_shell_or_taskbar && shell_overlay.is_none() {
                 if let Some(tb_rect) = taskbar_window_rect_for_anchor(anchor) {
                     let min_y = tb_rect.top.saturating_add(2);
                     let max_y = tb_rect.bottom.saturating_sub(badge_height).saturating_sub(2);
                     if min_y <= max_y {
                         y = y.clamp(min_y, max_y);
+                    }
+                }
+            }
+            // 검색 창 바깥으로 옮겼어도 작업표시줄 영역 안이면 배지가 작업표시줄 뒤로 가려진다(실측).
+            // 이 경우 작업표시줄 바로 위로 올린다. x는 이미 검색 창 바깥이다.
+            if shell_overlay.is_some() {
+                if let Some(tb_rect) = taskbar_window_rect_for_anchor(anchor) {
+                    let max_y = tb_rect.top.saturating_sub(badge_height).saturating_sub(2);
+                    if y > max_y {
+                        y = max_y;
                     }
                 }
             }
@@ -1171,6 +1199,11 @@ mod windows_app {
             if foreground != self.shell_overlay_hwnd {
                 self.shell_overlay_hwnd = foreground;
                 self.shell_overlay_active = is_taskbar_or_shell_window(foreground);
+                self.shell_overlay_is_search = self.shell_overlay_active && {
+                    let mut pid = 0u32;
+                    GetWindowThreadProcessId(foreground, &mut pid);
+                    crate::ime::process_executable_name(pid).as_deref() == Some("searchhost.exe")
+                };
                 self.shell_focused_host = FocusedInputHost::default();
                 self.shell_focused_host_tick = None;
                 WIN_EVENT_ALLOWED_HOST_PROCESS_ID.store(0, Ordering::Release);
@@ -1180,10 +1213,15 @@ mod windows_app {
                 return None;
             }
 
-            // 모던 셸 오버레이(SearchHost, StartMenu 등) 창 내부에서 사용자가 직접
-            // 텍스트를 입력할 때는 해당 창을 가림막(Occluder)으로 취급하지 않는다.
-            // 창 밖으로 배지를 밀어내면 작업표시줄 위쪽 툴팁/말풍선 뒤로 숨겨지는 버그가 발생하므로,
-            // None을 반환하여 텍스트 커서 바로 옆에 자연스럽게 표시되도록 한다.
+            // 검색 창(SearchHost)은 일반 창보다 높은 Z-order band(실측 6/13)에 그려져, 배지(band 1)를
+            // 어떻게 올려도 그 위로 나올 수 없다(uiAccess로도 불가). 그래서 창 영역을 가림막으로 알려
+            // 배지를 창 바깥 가장자리로 옮긴다. 시작 메뉴는 화면 전체를 덮으므로 대상에서 제외한다.
+            if self.shell_overlay_is_search {
+                let mut rect = RECT::default();
+                if GetWindowRect(foreground, &mut rect) != FALSE && rect_is_valid(rect) {
+                    return Some(rect);
+                }
+            }
             None
         }
 
@@ -1213,6 +1251,25 @@ mod windows_app {
             WIN_EVENT_ALLOWED_HOST_PROCESS_ID
                 .store(self.shell_focused_host.process_id, Ordering::Release);
             self.shell_focused_host
+        }
+
+        /// 검색 창/시작 메뉴 등 셸 오버레이에서 배지가 숨겨지거나 표시되는 사유를 로그에 남긴다.
+        /// 창 클래스, 프로세스, 판정 결과만 기록하며 입력 내용(UIA 이름/값)은 읽지 않는다.
+        unsafe fn diag_shell_hide(&self, reason: u8, ctx: FocusedInputContext, detail: &str) {
+            if !crate::hwp::diag_key_changed(reason, ctx.foreground) {
+                return;
+            }
+            if !is_taskbar_or_shell_window(ctx.foreground) {
+                return;
+            }
+            crate::hwp::log_line(&format!(
+                "[SHELL] reason={} exe={} fg_class={} focus_class={} {}",
+                reason,
+                crate::ime::process_executable_name(ctx.process_id).unwrap_or_default(),
+                crate::hwp::window_class_name(ctx.foreground),
+                crate::hwp::window_class_name(ctx.focus),
+                detail
+            ));
         }
 
         unsafe fn hide_badge(&mut self) {

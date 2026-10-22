@@ -45,6 +45,29 @@ pub fn log_line(message: &str) {
     }
 }
 
+// 진단 로그 중복 방지: 직전에 기록한 (사유, 창) 조합과 같으면 다시 쓰지 않는다.
+static LAST_DIAG_KEY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 같은 키가 연속으로 들어오면 false. 로그 폭주를 막기 위한 용도.
+pub fn diag_key_changed(reason: u8, window: HWND) -> bool {
+    let key = ((reason as u64 + 1) << 56) ^ (window as usize as u64 & 0x00FF_FFFF_FFFF_FFFF);
+    LAST_DIAG_KEY.swap(key, Ordering::Relaxed) != key
+}
+
+/// 창 클래스 이름 (진단용). 창 제목/내용은 읽지 않는다.
+pub fn window_class_name(window: HWND) -> String {
+    if window.is_null() {
+        return String::new();
+    }
+    let mut buf = [0u16; 128];
+    let len = unsafe { GetClassNameW(window, buf.as_mut_ptr(), buf.len() as i32) };
+    if len > 0 {
+        String::from_utf16_lossy(&buf[..len as usize])
+    } else {
+        String::new()
+    }
+}
+
 // 상태를 추적 중인 아래한글 프로세스 ID. 새 프로세스(=새로 시작한 아래한글)는 한글 상태로 시작한다.
 static HWP_PID: AtomicU32 = AtomicU32::new(0);
 
@@ -348,7 +371,8 @@ pub fn set_hwp_hangul_state_from_system(is_hangul: bool) {
     }
 }
 
-/// 강제 상태 설정 (창 포커스 진입 시 즉각 동기화)
+/// 강제 상태 설정 (현재는 테스트에서만 사용)
+#[allow(dead_code)]
 pub fn force_set_hwp_hangul_state(is_hangul: bool) {
     if IMM_TRACKS.load(Ordering::Relaxed) {
         return;
