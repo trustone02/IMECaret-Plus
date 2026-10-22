@@ -1,6 +1,6 @@
 ; IMECaret Plus 공식 설치 프로그램 스크립트 (Inno Setup)
 #define MyAppName "IMECaret Plus"
-#define MyAppVersion "1.1.3"
+#define MyAppVersion "1.1.4"
 #define MyAppURL "https://github.com/trustone02/IMECaret-Plus"
 #define MyAppExeName "IMECaretPlus.exe"
 #define MyAppPublisher "trustone02"
